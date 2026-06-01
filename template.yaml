@@ -1,0 +1,293 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Serverless Code Execution Engine
+  Free-tier architecture: S3 (test cases) + SSM Parameter Store (key) +
+  Lambda Container Image (g++ / javac) + DynamoDB (history)
+
+# ──────────────────────────── PARAMETERS ────────────────────────────
+Parameters:
+  EncryptionKey:
+    Type: String
+    NoEcho: true
+    Description: >
+      Fernet key (44 chars). Generate with:
+        python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+
+# ──────────────────────────── GLOBALS ────────────────────────────
+Globals:
+  Function:
+    Runtime: python3.11
+    Timeout: 30
+    MemorySize: 256
+    Environment:
+      Variables:
+        SSM_KEY_PARAM: !Sub '/code-exec/${AWS::StackName}/encryption-key'
+
+# ──────────────────────────── RESOURCES ────────────────────────────
+Resources:
+
+  # ═══════════════ NETWORKING (Dark Subnet for CodeRunner) ═══════════════
+
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags: [{Key: Name, Value: !Sub '${AWS::StackName}-vpc'}]
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags: [{Key: Name, Value: dark-subnet-1}]
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags: [{Key: Name, Value: dark-subnet-2}]
+
+  # No Internet Gateway attached → subnets are "dark" (no outbound internet)
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  SubnetRTA1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref PrivateSubnet1, RouteTableId: !Ref PrivateRouteTable}
+
+  SubnetRTA2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref PrivateSubnet2, RouteTableId: !Ref PrivateRouteTable}
+
+  CodeRunnerSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: CodeRunner Lambda — dark subnet, no outbound internet
+      VpcId: !Ref VPC
+      SecurityGroupEgress:
+        # Only allow traffic to VPC CIDR (reaches S3/DynamoDB via Gateway Endpoints)
+        - IpProtocol: -1
+          CidrIp: 10.0.0.0/16
+
+  # ── S3 Gateway Endpoint — FREE, lets CodeRunner reach S3 without internet ──
+  S3GatewayEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcEndpointType: Gateway
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      VpcId: !Ref VPC
+      RouteTableIds: [!Ref PrivateRouteTable]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: ['s3:GetObject']
+            Resource: !Sub 'arn:aws:s3:::${ProblemsBucket}/testcases/*'
+
+  # ═══════════════ STORAGE ═══════════════
+
+  ProblemsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'code-exec-${AWS::AccountId}'
+      # Lifecycle: auto-delete raw zip uploads after 7 days (saves storage)
+      LifecycleConfiguration:
+        Rules:
+          - Id: delete-raw-zips
+            Status: Enabled
+            Prefix: problems/
+            ExpirationInDays: 7
+
+  # ═══════════════ DATABASE ═══════════════
+
+  SubmissionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'code-exec-submissions-${AWS::StackName}'
+      BillingMode: PAY_PER_REQUEST   # free tier: 25 WCU/RCU per month
+      AttributeDefinitions:
+        - {AttributeName: id,        AttributeType: S}
+        - {AttributeName: timestamp, AttributeType: S}
+      KeySchema:
+        - {AttributeName: id,        KeyType: HASH}
+        - {AttributeName: timestamp, KeyType: RANGE}
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  # ═══════════════ SECRETS (SSM Parameter Store — Standard = FREE) ═══════════════
+
+  EncryptionKeyParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/code-exec/${AWS::StackName}/encryption-key'
+      Type: String          # SecureString needs KMS; String is fine — key is random base64
+      Value: !Ref EncryptionKey
+      Description: Fernet AES encryption key for test case data
+
+  # ═══════════════ IAM ROLES ═══════════════
+
+  BouncerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{Effect: Allow, Principal: {Service: lambda.amazonaws.com}, Action: sts:AssumeRole}]
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: BouncerPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/code-exec/${AWS::StackName}/*'
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt CodeRunnerFunction.Arn
+              - Effect: Allow
+                Action: [dynamodb:PutItem, dynamodb:Scan]
+                Resource: !GetAtt SubmissionsTable.Arn
+
+  CodeRunnerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{Effect: Allow, Principal: {Service: lambda.amazonaws.com}, Action: sts:AssumeRole}]
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Policies:
+        - PolicyName: CodeRunnerPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub '${ProblemsBucket.Arn}/testcases/*'
+
+  SyncRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{Effect: Allow, Principal: {Service: lambda.amazonaws.com}, Action: sts:AssumeRole}]
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: SyncPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/code-exec/${AWS::StackName}/*'
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub '${ProblemsBucket.Arn}/problems/*'
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub '${ProblemsBucket.Arn}/testcases/*'
+
+  # ═══════════════ LAMBDA FUNCTIONS ═══════════════
+
+  BouncerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'code-exec-bouncer-${AWS::StackName}'
+      CodeUri: bouncer/
+      Handler: app.lambda_handler
+      Role: !GetAtt BouncerRole.Arn
+      Environment:
+        Variables:
+          CODE_RUNNER_FUNCTION_NAME: !Ref CodeRunnerFunction
+          HISTORY_TABLE: !Ref SubmissionsTable
+      Events:
+        Submit:   {Type: Api, Properties: {Path: /submit,   Method: post}}
+        Problems: {Type: Api, Properties: {Path: /problems, Method: get}}
+        History:  {Type: Api, Properties: {Path: /history,  Method: get}}
+        Stats:    {Type: Api, Properties: {Path: /stats,    Method: get}}
+        OptSubmit:   {Type: Api, Properties: {Path: /submit,   Method: options}}
+        OptProblems: {Type: Api, Properties: {Path: /problems, Method: options}}
+        OptHistory:  {Type: Api, Properties: {Path: /history,  Method: options}}
+        OptStats:    {Type: Api, Properties: {Path: /stats,    Method: options}}
+
+  # Container image Lambda — has g++, javac, python3 pre-installed
+  CodeRunnerFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      DockerTag: latest
+      DockerContext: ./coderunner
+      Dockerfile: Dockerfile
+    Properties:
+      FunctionName: !Sub 'code-exec-runner-${AWS::StackName}'
+      PackageType: Image
+      Role: !GetAtt CodeRunnerRole.Arn
+      Timeout: 60
+      MemorySize: 512
+      VpcConfig:
+        SecurityGroupIds: [!Ref CodeRunnerSG]
+        SubnetIds: [!Ref PrivateSubnet1, !Ref PrivateSubnet2]
+      Environment:
+        Variables:
+          TEST_CASES_BUCKET: !Ref ProblemsBucket
+          EXECUTION_TIMEOUT: '5'
+
+  SyncFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'code-exec-sync-${AWS::StackName}'
+      CodeUri: sync/
+      Handler: app.lambda_handler
+      Role: !GetAtt SyncRole.Arn
+      Timeout: 120
+      # No VpcConfig — Sync is outside the VPC (no EFS to mount anymore)
+
+  SyncInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt SyncFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !GetAtt ProblemsBucket.Arn
+
+  S3NotificationConfig:
+    Type: AWS::S3::BucketNotification
+    DependsOn: SyncInvokePermission
+    Properties:
+      Bucket: !Ref ProblemsBucket
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: 's3:ObjectCreated:*'
+            Filter:
+              S3Key:
+                Rules:
+                  - {Name: prefix, Value: problems/}
+                  - {Name: suffix, Value: .zip}
+            Function: !GetAtt SyncFunction.Arn
+
+# ──────────────────────────── OUTPUTS ────────────────────────────
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway base URL — paste this into frontend/index.html
+    Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod'
+
+  ProblemsBucketName:
+    Description: S3 bucket — upload problem zips to problems/ prefix
+    Value: !Ref ProblemsBucket
+
+  BouncerFunction:
+    Value: !Ref BouncerFunction
+  CodeRunnerFunction:
+    Value: !Ref CodeRunnerFunction

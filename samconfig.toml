@@ -1,0 +1,19 @@
+version = 0.1
+
+[default]
+[default.global.parameters]
+stack_name = "code-exec-engine"
+
+[default.build.parameters]
+cached = true
+parallel = true
+
+[default.deploy.parameters]
+capabilities    = "CAPABILITY_IAM"
+confirm_changeset = false
+resolve_s3      = true
+region          = "ap-southeast-1"
+
+[default.local_start_api.parameters]
+warm_containers = "EAGER"
+env_vars        = "local/env.json"

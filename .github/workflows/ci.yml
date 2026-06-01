@@ -1,0 +1,63 @@
+name: CI — Code Execution Engine
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Unit & Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install g++ and build tools
+        run: sudo apt-get install -y g++ build-essential
+
+      - name: Install Python dependencies
+        run: pip install flask cryptography pytest
+
+      - name: Setup encrypted test cases
+        run: python local/server.py setup
+        working-directory: ${{ github.workspace }}
+
+      - name: Run test suite
+        run: pytest tests/ -v --tb=short
+        working-directory: ${{ github.workspace }}
+
+  lint:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Install linters
+        run: pip install flake8
+      - name: Lint Lambda functions
+        run: |
+          flake8 bouncer/ coderunner/ sync/ --max-line-length=100 --ignore=E501,W503
+
+  sam-validate:
+    name: Validate SAM Template
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/setup-sam@v2
+      - name: Validate SAM template
+        run: sam validate --lint
+        env:
+          AWS_DEFAULT_REGION: ap-southeast-1
