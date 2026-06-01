@@ -1,140 +1,123 @@
 # Serverless Code Execution Engine
 
-> Bài tập lớn môn **Điện toán Đám mây** — Thiết kế và hiện thực nền tảng thực thi mã nguồn trực tuyến theo kiến trúc Serverless.
+A cloud-native online judge platform that compiles and evaluates user-submitted code against hidden test cases — built entirely on AWS serverless infrastructure.
+
+Supports **Python 3**, **C++**, and **Java** with strict sandboxing: no internet access from the execution environment, encrypted test cases, per-invocation cleanup, and rate limiting.
 
 ---
 
-## Giới thiệu đề tài
-
-Hệ thống cho phép người dùng nộp mã nguồn (Python, C++, Java) để chạy và chấm điểm tự động — tương tự các nền tảng Online Judge như Codeforces hay LeetCode — nhưng được xây dựng hoàn toàn trên kiến trúc **Serverless** của AWS.
-
-### Kiến trúc hệ thống
+## Architecture
 
 ```
 Internet
     │
     ▼
-┌─────────────────────────────────────────────────────┐
-│  API Gateway  (HTTPS, CORS, rate limiting tự động)  │
-└───────────────────────┬─────────────────────────────┘
-                        │ POST /submit
-                        ▼
-┌──────────────────────────────────────────────────────┐
-│  Bouncer Lambda  (ngoài VPC)                         │
-│  • Xác thực request                                  │
-│  • Lấy encryption key từ SSM Parameter Store         │
-│  • Rate limiting (10 req/min/IP)                     │
-│  • Ghi lịch sử vào DynamoDB                          │
-│  • Invoke CodeRunner Lambda                          │
-└───────────────────────┬──────────────────────────────┘
-                        │ invoke (synchronous)
-                        ▼
-┌──────────────────────────────────────────────────────┐
-│  VPC — Dark Subnet (không có Internet Gateway)       │
-│  ┌────────────────────────────────────────────────┐  │
-│  │  CodeRunner Lambda  (Container Image)          │  │
-│  │  • Tải test cases từ S3 qua Gateway Endpoint   │  │
-│  │  • Giải mã Fernet vào RAM (không ghi disk)     │  │
-│  │  • Biên dịch + chạy code (g++, javac, python)  │  │
-│  │  • Timeout 5s → SIGKILL                        │  │
-│  │  • Cleanup /tmp sau mỗi lần chạy               │  │
-│  └────────────────────────────────────────────────┘  │
-│              │ S3 Gateway Endpoint (free)             │
-└──────────────┼───────────────────────────────────────┘
-               │
-               ▼
-┌──────────────────────────────────────────────────────┐
-│  S3 Bucket                                           │
-│  • problems/{id}.zip  ← giảng viên upload           │
-│  • testcases/{id}.enc ← Sync Lambda tạo ra          │
-└──────────────────────────────────────────────────────┘
-               ▲
-               │ S3 Event Trigger
-┌──────────────────────────────────────────────────────┐
-│  Sync Lambda  (ngoài VPC)                            │
-│  • Nhận trigger khi zip mới được upload              │
-│  • Parse .in/.out pairs                              │
-│  • Mã hóa Fernet + nén gzip                         │
-│  • Lưu lại S3 testcases/                            │
-└──────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────┐
+│           API Gateway  (HTTPS, CORS)         │
+└─────────────────────┬───────────────────────┘
+                      │
+                      ▼
+┌─────────────────────────────────────────────┐
+│  Bouncer  (Lambda — Python 3.11)            │
+│  · Rate limiting  10 req / min / IP         │
+│  · Fetches encryption key from SSM          │
+│  · Writes submission record to DynamoDB     │
+│  · Invokes CodeRunner synchronously         │
+└─────────────────────┬───────────────────────┘
+                      │
+                      ▼
+┌─────────────────────────────────────────────┐
+│  VPC — Private Subnet (no Internet Gateway) │
+│  ┌─────────────────────────────────────────┐│
+│  │  CodeRunner  (Lambda Container Image)   ││
+│  │  · Downloads test cases via S3 Endpoint ││
+│  │  · Decrypts Fernet payload into RAM     ││
+│  │  · Compiles & runs: g++ / javac / py    ││
+│  │  · 5 s timeout → SIGKILL               ││
+│  │  · Wipes /tmp after every invocation   ││
+│  └─────────────────────────────────────────┘│
+│               │  S3 Gateway Endpoint (free)  │
+└───────────────┼─────────────────────────────┘
+                ▼
+┌─────────────────────────────────────────────┐
+│  S3 Bucket                                  │
+│  · problems/{id}.zip   ← admin upload       │
+│  · testcases/{id}.enc  ← Sync Lambda writes │
+└─────────────────────────────────────────────┘
+                ▲
+                │  ObjectCreated trigger
+┌─────────────────────────────────────────────┐
+│  Sync  (Lambda — Python 3.11)               │
+│  · Unzips problem archive                   │
+│  · Pairs .in / .out files                   │
+│  · Encrypts with Fernet + gzip              │
+│  · Uploads to testcases/                    │
+└─────────────────────────────────────────────┘
 ```
-
-### Tính năng bảo mật nổi bật
-
-| Cơ chế | Mô tả |
-|--------|-------|
-| **Dark Subnet** | CodeRunner nằm trong VPC không có Internet Gateway — mã độc không thể gọi ra ngoài |
-| **Fernet Encryption** | Test cases mã hóa AES trên S3, chỉ giải mã vào RAM khi chạy |
-| **Subprocess Timeout** | Vòng lặp vô hạn bị SIGKILL sau 5 giây |
-| **`/tmp` Cleanup** | Dọn sạch sau mỗi invocation, tránh rò rỉ dữ liệu giữa warm starts |
-| **Rate Limiting** | 10 submissions/phút/IP tại Bouncer |
-| **IAM Least Privilege** | Mỗi Lambda chỉ có đúng quyền cần thiết |
-
-### Stack công nghệ (AWS Free Tier)
-
-| Thành phần | Dịch vụ AWS | Chi phí |
-|-----------|-------------|---------|
-| API Gateway | Amazon API Gateway | Free (1M req/tháng) |
-| Bouncer + Sync | AWS Lambda (Python 3.11) | Free (1M invocations) |
-| CodeRunner | AWS Lambda Container Image (g++, javac, python3) | Free |
-| Test cases | Amazon S3 | Free (5GB) |
-| Encryption key | SSM Parameter Store Standard | Free |
-| Submission history | Amazon DynamoDB | Free (25GB) |
-| Network isolation | VPC + S3 Gateway Endpoint | Free |
 
 ---
 
-## Cài đặt và Chạy
+## Security
 
-### Yêu cầu
+| Mechanism | Detail |
+|-----------|--------|
+| **Dark subnet** | CodeRunner VPC has no Internet Gateway — submitted code cannot reach the internet |
+| **Fernet encryption** | Test cases stored AES-encrypted on S3; decrypted into RAM only at runtime |
+| **Process timeout** | 5-second hard limit enforced via `subprocess.run(timeout=…)` + SIGKILL |
+| **`/tmp` wipe** | Full cleanup after every invocation; cold start forced on cleanup failure |
+| **Rate limiting** | 10 submissions / minute / IP at the Bouncer layer |
+| **IAM least privilege** | Each Lambda carries only the permissions it requires |
 
-- Python 3.10+
-- `pip install flask cryptography`
-- g++ (MinGW-w64 trên Windows, hoặc `apt install g++` trên Linux)
-- Java JDK 17+ (tùy chọn, để test Java)
+---
 
-### Chạy demo local (không cần AWS)
+## AWS Stack (all Free Tier)
+
+| Component | Service |
+|-----------|---------|
+| HTTP API | Amazon API Gateway |
+| Bouncer · Sync | AWS Lambda (Python 3.11) |
+| CodeRunner sandbox | AWS Lambda Container Image (g++ · javac · python3) |
+| Test case storage | Amazon S3 |
+| Encryption key | SSM Parameter Store Standard |
+| Submission history | Amazon DynamoDB (on-demand) |
+| Network isolation | VPC + S3 Gateway Endpoint |
+
+---
+
+## Getting Started
+
+### Local demo (no AWS required)
 
 ```bash
-# 1. Clone repo
-git clone https://github.com/<your-username>/BTL-Cloud-Computing.git
+git clone https://github.com/phacko11/BTL-Cloud-Computing.git
 cd BTL-Cloud-Computing
 
-# 2. Cài dependencies
 pip install flask cryptography
-
-# 3. Khởi động server (tự động setup lần đầu)
 python local/server.py
-
-# 4. Mở giao diện web
-#    Mở file frontend/index.html trong trình duyệt
-#    API URL mặc định: http://localhost:5000
 ```
 
-Server tự động:
-- Tạo Fernet key ngẫu nhiên → lưu `local/secrets.json`
-- Mã hóa 6 bài toán mẫu → lưu `local/efs/*.enc`
-- Khởi động Flask API tại `http://localhost:5000`
+Open `frontend/index.html` in a browser. Default API URL: `http://localhost:5000`.
 
-### Deploy lên AWS (Free Tier)
+On first run the server generates a Fernet key, encrypts the sample problems, and starts serving immediately.
 
-Xem hướng dẫn chi tiết: **[AWS_SETUP.md](AWS_SETUP.md)**
+### Deploy to AWS
+
+See **[AWS_SETUP.md](AWS_SETUP.md)** for full instructions.
 
 ```bash
-# Sau khi cấu hình AWS credentials:
 pip install aws-sam-cli
-python scripts/deploy.py
+python scripts/deploy.py      # build → deploy → upload problems → print API URL
 
-# Dọn dẹp sau demo:
+# Tear down when done:
 python scripts/teardown.py
 ```
 
 ---
 
-## Bài toán mẫu
+## Sample Problems
 
-| ID | Tên | Độ khó | Test cases |
-|----|-----|--------|-----------|
+| ID | Title | Difficulty | Test cases |
+|----|-------|-----------|-----------|
 | `hello_world` | Hello World | Easy | 1 |
 | `sum_two` | Sum of Two Numbers | Easy | 3 |
 | `fibonacci` | Fibonacci Number | Easy | 3 |
@@ -142,41 +125,21 @@ python scripts/teardown.py
 | `reverse_string` | Reverse String | Easy | 2 |
 | `sort_array` | Sort Array | Medium | 3 |
 
-### Ngôn ngữ hỗ trợ
-
-| Ngôn ngữ | Runtime | Compiler |
-|----------|---------|----------|
-| Python 3 | CPython 3.11 | — |
-| C++ | — | g++ -O2 -std=c++17 |
-| Java | JVM 17 | javac |
-
 ---
 
-## Kết quả có thể trả về
+## API
 
-| Status | Mô tả |
-|--------|-------|
-| `ACCEPTED` | Tất cả test cases pass |
-| `WRONG_ANSWER` | Output không khớp expected |
-| `TIME_LIMIT_EXCEEDED` | Vượt quá 5 giây |
-| `RUNTIME_ERROR` | Crash / non-zero exit code |
-| `COMPILATION_ERROR` | Lỗi biên dịch (C++/Java) |
+Base URL: `http://localhost:5000` (local) · API Gateway URL (AWS)
 
----
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/problems` | List all problems |
+| `POST` | `/submit` | Submit code for evaluation |
+| `GET` | `/history` | Submission history |
+| `GET` | `/stats` | Per-problem statistics |
+| `POST` | `/admin/upload` | Upload a new problem zip |
 
-## API Reference
-
-Base URL: `http://localhost:5000` (local) hoặc API Gateway URL (AWS)
-
-| Method | Endpoint | Mô tả |
-|--------|----------|-------|
-| `GET` | `/problems` | Danh sách bài toán |
-| `POST` | `/submit` | Nộp bài |
-| `GET` | `/history` | Lịch sử nộp bài |
-| `GET` | `/stats` | Thống kê theo bài |
-| `POST` | `/admin/upload` | Upload bài toán mới (zip) |
-
-### POST /submit
+**POST /submit**
 
 ```json
 {
@@ -186,64 +149,53 @@ Base URL: `http://localhost:5000` (local) hoặc API Gateway URL (AWS)
 }
 ```
 
-Response:
 ```json
 {
   "status": "ACCEPTED",
   "passed": 3,
   "total": 3,
   "results": [
-    {"test_case": 1, "status": "ACCEPTED", "expected": null, "actual": null},
-    {"test_case": 2, "status": "ACCEPTED", "expected": null, "actual": null},
-    {"test_case": 3, "status": "ACCEPTED", "expected": null, "actual": null}
+    {"test_case": 1, "status": "ACCEPTED"},
+    {"test_case": 2, "status": "ACCEPTED"},
+    {"test_case": 3, "status": "ACCEPTED"}
   ]
 }
 ```
 
+**Verdict codes:** `ACCEPTED` · `WRONG_ANSWER` · `TIME_LIMIT_EXCEEDED` · `RUNTIME_ERROR` · `COMPILATION_ERROR`
+
 ---
 
-## Chạy test suite
+## Tests
 
 ```bash
 pip install pytest
 pytest tests/ -v
-# Expected: 26 passed
+# 26 passed
 ```
+
+Covers: Python / C++ / Java execution, encryption roundtrip, admin upload, rate limiter.
 
 ---
 
-## Cấu trúc thư mục
+## Project Structure
 
 ```
-BTL-Cloud-Computing/
+.
 ├── template.yaml          # AWS SAM / CloudFormation
-├── samconfig.toml         # SAM config (region: ap-southeast-1)
-├── bouncer/               # Lambda 1: API Gateway + điều phối
-│   ├── app.py
-│   └── requirements.txt
-├── coderunner/            # Lambda 2: sandbox thực thi (Container Image)
-│   ├── app.py
-│   ├── Dockerfile         # g++ + javac + python3
-│   └── requirements.txt
-├── sync/                  # Lambda 3: S3 trigger → mã hóa → S3
-│   ├── app.py
-│   └── requirements.txt
+├── samconfig.toml
+├── bouncer/               # Lambda 1 — routing, rate limit, DynamoDB
+├── coderunner/            # Lambda 2 — sandboxed execution (Container Image)
+│   └── Dockerfile         # python3.11 + g++ + javac
+├── sync/                  # Lambda 3 — S3 trigger → encrypt → S3
 ├── frontend/
-│   └── index.html         # Web UI (4 tabs: Judge / History / Stats / Admin)
+│   └── index.html         # Web UI: Judge · History · Stats · Admin
 ├── local/
-│   ├── server.py          # Flask demo server (không cần AWS)
-│   └── requirements.txt
-├── problems/              # Test cases thô
-│   ├── hello_world/
-│   ├── sum_two/
-│   ├── fibonacci/
-│   ├── prime_check/
-│   ├── reverse_string/
-│   └── sort_array/
+│   └── server.py          # Flask server for local demo
+├── problems/              # Raw test cases (.in / .out)
 ├── scripts/
 │   ├── deploy.py          # One-command AWS deployment
-│   └── teardown.py        # Dọn dẹp sau demo
-├── tests/
-│   └── test_engine.py     # 26 unit tests
-└── AWS_SETUP.md           # Hướng dẫn tạo tài khoản AWS
+│   └── teardown.py        # Stack cleanup
+└── tests/
+    └── test_engine.py
 ```
