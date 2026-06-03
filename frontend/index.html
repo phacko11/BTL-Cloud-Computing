@@ -1,257 +1,270 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Serverless Code Execution Engine</title>
+  <title>Code Execution Engine</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #e2e8f0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
 
     /* ── Header ── */
     header {
-      background: linear-gradient(135deg, #1a3a6b 0%, #0f172a 100%);
-      border-bottom: 1px solid #334155;
-      padding: 0 24px;
-      display: flex; align-items: center; gap: 12px; height: 52px;
+      background: #1e293b; border-bottom: 1px solid #334155;
+      padding: 0 20px; display: flex; align-items: center; gap: 12px; height: 48px; flex-shrink: 0;
     }
-    header .logo { font-size: 1.4rem; }
-    header h1 { font-size: 1rem; font-weight: 700; color: #93c5fd; }
-    header .badge { font-size: 0.7rem; background: #1d4ed8; color: #bfdbfe; padding: 2px 8px; border-radius: 10px; margin-left: 4px; }
+    header .logo { font-size: 1.2rem; }
+    header h1 { font-size: 0.95rem; font-weight: 700; color: #93c5fd; }
+    header .sep { color: #334155; margin: 0 4px; }
+    header .sub { font-size: 0.78rem; color: #475569; }
 
     /* ── Tabs ── */
-    .tabs { display: flex; background: #1e293b; border-bottom: 1px solid #334155; }
+    .tabs { display: flex; background: #1a2438; border-bottom: 1px solid #334155; flex-shrink: 0; }
     .tab-btn {
-      padding: 12px 20px; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+      padding: 10px 18px; font-size: 0.82rem; font-weight: 600; cursor: pointer;
       border: none; background: transparent; color: #64748b;
       border-bottom: 2px solid transparent; transition: all 0.15s;
     }
     .tab-btn:hover { color: #94a3b8; }
     .tab-btn.active { color: #60a5fa; border-bottom-color: #3b82f6; }
-    .tab-content { display: none; height: calc(100vh - 90px); }
+    .tab-content { display: none; flex: 1; overflow: hidden; }
     .tab-content.active { display: flex; }
 
-    /* ── Judge tab layout ── */
-    #tabJudge { gap: 0; }
-    .sidebar {
-      width: 280px; background: #1e293b; border-right: 1px solid #334155;
-      display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0;
-    }
-    .sidebar-header {
-      padding: 12px 16px; font-size: 0.7rem; font-weight: 700;
-      text-transform: uppercase; letter-spacing: 0.08em; color: #64748b;
-      border-bottom: 1px solid #334155;
-    }
-    .problem-list { flex: 1; overflow-y: auto; }
-    .problem-item {
-      padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #0f172a;
-      transition: background 0.1s;
-    }
-    .problem-item:hover { background: #263349; }
-    .problem-item.active { background: #1d3461; border-left: 3px solid #3b82f6; }
-    .problem-item .p-title { font-size: 0.88rem; font-weight: 600; margin-bottom: 3px; }
-    .problem-item .p-desc  { font-size: 0.72rem; color: #94a3b8; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .badge-diff {
-      display: inline-block; font-size: 0.62rem; font-weight: 700;
-      padding: 1px 6px; border-radius: 8px; margin-left: 6px; vertical-align: middle;
-    }
-    .badge-diff.Easy   { background: #14532d; color: #86efac; }
-    .badge-diff.Medium { background: #78350f; color: #fcd34d; }
-    .badge-diff.Hard   { background: #7f1d1d; color: #fca5a5; }
+    /* ══════════════ RUNNER TAB ══════════════ */
+    #tabRunner { flex-direction: row; }
 
-    .problem-detail {
-      padding: 14px 16px; border-top: 1px solid #334155; font-size: 0.78rem;
-      background: #162032;
+    /* ── Snippet sidebar ── */
+    .snippet-sidebar {
+      width: 240px; background: #1e293b; border-right: 1px solid #334155;
+      display: flex; flex-direction: column; flex-shrink: 0;
     }
-    .detail-label { font-weight: 700; color: #475569; font-size: 0.68rem; text-transform: uppercase; margin-bottom: 3px; margin-top: 8px; }
-    .detail-label:first-child { margin-top: 0; }
-    .detail-pre {
-      background: #0f172a; padding: 7px 10px; border-radius: 5px;
-      font-family: 'Consolas', monospace; font-size: 0.78rem; color: #c9d1d9;
-      white-space: pre-wrap; min-height: 20px;
+    .sb-head {
+      padding: 10px 14px; font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.08em; color: #475569; border-bottom: 1px solid #334155;
+      display: flex; align-items: center; justify-content: space-between;
     }
+    .sb-add {
+      background: #1d4ed8; color: #fff; border: none; border-radius: 5px;
+      font-size: 0.72rem; font-weight: 700; padding: 3px 9px; cursor: pointer;
+    }
+    .sb-add:hover { background: #2563eb; }
+    .snippet-list { flex: 1; overflow-y: auto; }
+    .snippet-item {
+      padding: 10px 14px; cursor: pointer; border-bottom: 1px solid #0f172a;
+      transition: background 0.1s; position: relative;
+    }
+    .snippet-item:hover { background: #263349; }
+    .snippet-item.active { background: #1d3461; border-left: 3px solid #3b82f6; }
+    .snippet-item .sn-name { font-size: 0.83rem; font-weight: 600; color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 40px; }
+    .snippet-item .sn-lang { font-size: 0.68rem; color: #64748b; margin-top: 2px; }
+    .snippet-actions { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); display: none; gap: 4px; }
+    .snippet-item:hover .snippet-actions { display: flex; }
+    .sn-btn { background: #334155; border: none; color: #94a3b8; border-radius: 4px; width: 22px; height: 22px; cursor: pointer; font-size: 0.72rem; display: flex; align-items: center; justify-content: center; }
+    .sn-btn:hover { background: #475569; color: #e2e8f0; }
+    .sn-btn.del:hover { background: #7f1d1d; color: #fca5a5; }
+    .sb-empty { padding: 20px 14px; font-size: 0.78rem; color: #475569; line-height: 1.6; }
 
-    .main-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    /* ── Editor area ── */
+    .editor-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
     .toolbar {
-      display: flex; align-items: center; gap: 10px;
-      padding: 10px 16px; background: #1e293b; border-bottom: 1px solid #334155;
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 14px; background: #1e293b; border-bottom: 1px solid #334155; flex-shrink: 0;
     }
-    .toolbar label { font-size: 0.78rem; color: #94a3b8; }
+    .toolbar label { font-size: 0.77rem; color: #64748b; }
     select {
       background: #0f172a; color: #e2e8f0; border: 1px solid #475569;
-      border-radius: 6px; padding: 5px 10px; font-size: 0.83rem; cursor: pointer;
+      border-radius: 6px; padding: 5px 10px; font-size: 0.82rem; cursor: pointer;
     }
+    .snippet-name-input {
+      flex: 1; max-width: 220px; background: #0f172a; color: #e2e8f0;
+      border: 1px solid #475569; border-radius: 6px; padding: 5px 10px; font-size: 0.82rem;
+    }
+    .snippet-name-input::placeholder { color: #475569; }
+
     .btn {
-      padding: 7px 18px; border: none; border-radius: 7px; font-size: 0.85rem;
+      padding: 6px 16px; border: none; border-radius: 6px; font-size: 0.83rem;
       font-weight: 600; cursor: pointer; transition: background 0.15s;
-      display: flex; align-items: center; gap: 7px;
+      display: flex; align-items: center; gap: 6px;
     }
-    .btn-primary { background: #1d4ed8; color: #fff; margin-left: auto; }
-    .btn-primary:hover:not(:disabled) { background: #2563eb; }
-    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-run { background: #16a34a; color: #fff; margin-left: auto; }
+    .btn-run:hover:not(:disabled) { background: #15803d; }
+    .btn-run:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-save { background: #334155; color: #cbd5e1; }
+    .btn-save:hover { background: #475569; }
     .btn-secondary { background: #334155; color: #cbd5e1; }
-    .btn-secondary:hover { background: #3f4f66; }
-    .spinner { width: 13px; height: 13px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; display: none; }
+    .btn-secondary:hover { background: #475569; }
+    .btn-danger { background: #7f1d1d; color: #fca5a5; }
+    .btn-danger:hover { background: #991b1b; }
+
+    .spinner { width: 12px; height: 12px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; display: none; }
     .btn.loading .spinner { display: block; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    textarea#code {
-      flex: 1; width: 100%; background: #0d1117; color: #c9d1d9;
+    /* ── Split pane: editor + stdin ── */
+    .code-pane { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .editor-wrap { flex: 1; position: relative; overflow: hidden; }
+    textarea.code {
+      width: 100%; height: 100%; background: #0d1117; color: #c9d1d9;
       border: none; font-family: 'Consolas', 'Fira Code', monospace;
-      font-size: 0.87rem; line-height: 1.65; padding: 16px 20px;
+      font-size: 0.87rem; line-height: 1.65; padding: 14px 18px;
       resize: none; outline: none; tab-size: 4;
     }
 
-    .results-panel {
-      height: 220px; background: #0a0f1a; border-top: 1px solid #334155;
-      display: flex; flex-direction: column;
+    .stdin-bar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 14px; background: #1a2438; border-top: 1px solid #334155;
+      font-size: 0.72rem; color: #475569; flex-shrink: 0;
     }
-    .results-header {
-      padding: 8px 16px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+    textarea.stdin {
+      flex: 1; background: #0f172a; color: #cbd5e1; border: 1px solid #334155;
+      border-radius: 5px; font-family: 'Consolas', monospace; font-size: 0.78rem;
+      padding: 5px 8px; resize: none; outline: none; height: 52px; line-height: 1.4;
+    }
+    textarea.stdin:focus { border-color: #475569; }
+    textarea.stdin::placeholder { color: #334155; }
+
+    /* ── Output panel ── */
+    .output-panel {
+      height: 200px; background: #080d14; border-top: 1px solid #334155;
+      display: flex; flex-direction: column; flex-shrink: 0;
+    }
+    .output-header {
+      padding: 6px 14px; font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
       letter-spacing: 0.08em; color: #475569; border-bottom: 1px solid #1e293b;
-      display: flex; align-items: center; gap: 10px;
+      display: flex; align-items: center; gap: 10px; flex-shrink: 0;
     }
-    .verdict { font-size: 0.82rem; font-weight: 700; padding: 2px 10px; border-radius: 10px; }
-    .verdict.ACCEPTED              { background: #14532d; color: #86efac; }
-    .verdict.WRONG_ANSWER          { background: #7f1d1d; color: #fca5a5; }
-    .verdict.COMPILATION_ERROR     { background: #78350f; color: #fcd34d; }
-    .verdict.TIME_LIMIT_EXCEEDED   { background: #4c1d95; color: #c4b5fd; }
-    .verdict.RUNTIME_ERROR         { background: #7f1d1d; color: #fca5a5; }
-    .verdict.ERROR                 { background: #374151; color: #9ca3af; }
-    .results-body { flex: 1; overflow-y: auto; padding: 8px 16px; }
-    .tc-row {
-      display: grid; grid-template-columns: 70px 130px 1fr;
-      gap: 6px; align-items: start; padding: 6px 0; border-bottom: 1px solid #1e293b;
-      font-size: 0.76rem;
+    .status-chip { font-size: 0.75rem; font-weight: 700; padding: 2px 9px; border-radius: 8px; }
+    .status-chip.OK                   { background: #14532d; color: #86efac; }
+    .status-chip.COMPILATION_ERROR    { background: #78350f; color: #fcd34d; }
+    .status-chip.RUNTIME_ERROR        { background: #7f1d1d; color: #fca5a5; }
+    .status-chip.TIME_LIMIT_EXCEEDED  { background: #4c1d95; color: #c4b5fd; }
+    .status-chip.ERROR                { background: #374151; color: #9ca3af; }
+    .time-label { font-size: 0.72rem; color: #475569; margin-left: auto; }
+    .output-body {
+      flex: 1; overflow-y: auto; padding: 10px 14px;
+      font-family: 'Consolas', monospace; font-size: 0.82rem; line-height: 1.55;
     }
-    .tc-row:last-child { border-bottom: none; }
-    .tc-num { color: #475569; }
-    .tc-status { font-weight: 700; }
-    .tc-status.ACCEPTED            { color: #86efac; }
-    .tc-status.WRONG_ANSWER        { color: #fca5a5; }
-    .tc-status.TIME_LIMIT_EXCEEDED { color: #c4b5fd; }
-    .tc-status.RUNTIME_ERROR       { color: #fca5a5; }
-    .tc-detail { color: #94a3b8; font-family: monospace; font-size: 0.73rem; }
-    .placeholder { color: #475569; font-size: 0.83rem; text-align: center; padding: 20px; }
+    .out-stdout { color: #c9d1d9; white-space: pre-wrap; word-break: break-all; }
+    .out-stderr { color: #fca5a5; white-space: pre-wrap; word-break: break-all; margin-top: 6px; font-size: 0.78rem; }
+    .out-error  { color: #fcd34d; white-space: pre-wrap; word-break: break-all; }
+    .out-placeholder { color: #334155; font-size: 0.82rem; }
 
-    /* ── History / Stats tabs ── */
-    .page { padding: 24px; overflow-y: auto; flex: 1; }
-    .page h2 { font-size: 1.1rem; font-weight: 700; color: #93c5fd; margin-bottom: 16px; }
-
-    table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
-    th { text-align: left; padding: 8px 12px; background: #1e293b; color: #64748b; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid #334155; }
-    td { padding: 9px 12px; border-bottom: 1px solid #1a2638; color: #cbd5e1; }
+    /* ══════════════ HISTORY TAB ══════════════ */
+    .page { padding: 22px; overflow-y: auto; flex: 1; }
+    .page h2 { font-size: 1rem; font-weight: 700; color: #93c5fd; margin-bottom: 14px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+    th { text-align: left; padding: 8px 12px; background: #1e293b; color: #64748b; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid #334155; }
+    td { padding: 8px 12px; border-bottom: 1px solid #1a2638; color: #cbd5e1; }
     tr:hover td { background: #1a2638; }
-    .chip { display: inline-block; padding: 2px 8px; border-radius: 8px; font-size: 0.72rem; font-weight: 700; }
-    .chip.ACCEPTED            { background: #14532d; color: #86efac; }
-    .chip.WRONG_ANSWER        { background: #7f1d1d; color: #fca5a5; }
-    .chip.COMPILATION_ERROR   { background: #78350f; color: #fcd34d; }
-    .chip.TIME_LIMIT_EXCEEDED { background: #4c1d95; color: #c4b5fd; }
-    .chip.RUNTIME_ERROR       { background: #7f1d1d; color: #fca5a5; }
-    .chip.ERROR               { background: #374151; color: #9ca3af; }
+    .chip { display: inline-block; padding: 2px 8px; border-radius: 7px; font-size: 0.7rem; font-weight: 700; }
+    .chip.OK                   { background: #14532d; color: #86efac; }
+    .chip.ACCEPTED             { background: #14532d; color: #86efac; }
+    .chip.WRONG_ANSWER         { background: #7f1d1d; color: #fca5a5; }
+    .chip.COMPILATION_ERROR    { background: #78350f; color: #fcd34d; }
+    .chip.TIME_LIMIT_EXCEEDED  { background: #4c1d95; color: #c4b5fd; }
+    .chip.RUNTIME_ERROR        { background: #7f1d1d; color: #fca5a5; }
+    .chip.ERROR                { background: #374151; color: #9ca3af; }
     .chip.python3 { background: #1a3a6b; color: #93c5fd; }
     .chip.cpp     { background: #2d1b4e; color: #c4b5fd; }
     .chip.java    { background: #3b2000; color: #fbbf24; }
 
-    /* Stats cards */
-    .stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
-    .stat-card {
-      background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 16px;
+    /* ══════════════ MODAL ══════════════ */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+      display: flex; align-items: center; justify-content: center; z-index: 100;
     }
-    .stat-card .s-title { font-size: 0.88rem; font-weight: 700; color: #e2e8f0; margin-bottom: 10px; }
-    .stat-card .s-row { display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem; margin-bottom: 6px; }
-    .stat-card .s-label { color: #64748b; }
-    .stat-card .s-val { font-weight: 700; color: #94a3b8; }
-    .progress-bar-wrap { height: 5px; background: #334155; border-radius: 3px; margin-top: 10px; overflow: hidden; }
-    .progress-bar { height: 100%; border-radius: 3px; background: #22c55e; transition: width .5s; }
-
-    /* Admin tab */
-    .upload-form {
-      background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 24px;
-      max-width: 520px;
+    .modal-overlay.hidden { display: none; }
+    .modal {
+      background: #1e293b; border: 1px solid #334155; border-radius: 10px;
+      padding: 22px; width: 360px;
     }
-    .upload-form label { display: block; font-size: 0.8rem; color: #94a3b8; margin-bottom: 6px; margin-top: 14px; }
-    .upload-form label:first-child { margin-top: 0; }
-    .upload-form input[type=text], .upload-form input[type=file] {
+    .modal h3 { font-size: 0.95rem; font-weight: 700; color: #e2e8f0; margin-bottom: 14px; }
+    .modal label { display: block; font-size: 0.77rem; color: #94a3b8; margin-bottom: 5px; margin-top: 12px; }
+    .modal label:first-of-type { margin-top: 0; }
+    .modal input, .modal select {
       width: 100%; background: #0f172a; color: #e2e8f0; border: 1px solid #475569;
-      border-radius: 6px; padding: 8px 12px; font-size: 0.85rem;
+      border-radius: 6px; padding: 7px 10px; font-size: 0.85rem;
     }
-    .upload-form input[type=file] { padding: 6px; }
-    .upload-msg { margin-top: 14px; font-size: 0.83rem; padding: 8px 12px; border-radius: 6px; }
-    .upload-msg.ok  { background: #14532d; color: #86efac; }
-    .upload-msg.err { background: #7f1d1d; color: #fca5a5; }
-    .upload-note { margin-top: 14px; font-size: 0.75rem; color: #64748b; line-height: 1.6; }
-    .upload-note code { background: #0f172a; padding: 1px 5px; border-radius: 3px; font-family: monospace; color: #93c5fd; }
+    .modal-btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
 
-    /* API config bar */
+    /* ── API bar ── */
     .api-bar {
-      position: fixed; bottom: 0; right: 0; padding: 6px 14px;
+      position: fixed; bottom: 0; right: 0; padding: 5px 12px;
       background: #1e293b; border-top: 1px solid #334155; border-left: 1px solid #334155;
-      display: flex; align-items: center; gap: 8px; font-size: 0.72rem; color: #64748b;
-      border-radius: 8px 0 0 0; z-index: 10;
+      display: flex; align-items: center; gap: 7px; font-size: 0.7rem; color: #64748b;
+      border-radius: 7px 0 0 0; z-index: 10;
     }
-    .api-bar input { background: #0f172a; color: #e2e8f0; border: 1px solid #475569; border-radius: 4px; padding: 3px 8px; font-size: 0.72rem; width: 220px; }
-    .api-status { width: 8px; height: 8px; border-radius: 50%; background: #ef4444; flex-shrink: 0; }
-    .api-status.ok { background: #22c55e; }
+    .api-bar input { background: #0f172a; color: #e2e8f0; border: 1px solid #475569; border-radius: 4px; padding: 2px 7px; font-size: 0.7rem; width: 200px; }
+    .api-dot { width: 7px; height: 7px; border-radius: 50%; background: #ef4444; flex-shrink: 0; }
+    .api-dot.ok { background: #22c55e; }
   </style>
 </head>
 <body>
 
 <header>
   <span class="logo">⚡</span>
-  <h1>Serverless Code Execution Engine</h1>
-  <span class="badge">Cloud Computing — BTL Demo</span>
+  <h1>Code Execution Engine</h1>
+  <span class="sep">·</span>
+  <span class="sub">Serverless · Python · C++ · Java</span>
 </header>
 
 <div class="tabs">
-  <button class="tab-btn active" onclick="switchTab('Judge', this)">Judge</button>
-  <button class="tab-btn" onclick="switchTab('History', this)">Submission History</button>
-  <button class="tab-btn" onclick="switchTab('Stats', this)">Statistics</button>
-  <button class="tab-btn" onclick="switchTab('Admin', this)">Admin</button>
+  <button class="tab-btn active" onclick="switchTab('Runner',this)">Run Code</button>
+  <button class="tab-btn" onclick="switchTab('History',this)">History</button>
 </div>
 
-<!-- ══════════════ JUDGE TAB ══════════════ -->
-<div id="tabJudge" class="tab-content active">
-  <aside class="sidebar">
-    <div class="sidebar-header">Problems</div>
-    <div class="problem-list" id="problemList"><div class="placeholder">Loading…</div></div>
-    <div class="problem-detail" id="problemDetail" style="display:none">
-      <div class="detail-label">Description</div>
-      <div id="detailDesc" style="font-size:0.78rem;color:#94a3b8;line-height:1.5;margin-top:2px"></div>
-      <div class="detail-label">Constraints</div>
-      <div id="detailConstraints" style="font-size:0.75rem;color:#64748b;margin-top:2px"></div>
-      <div class="detail-label">Sample Input</div>
-      <pre class="detail-pre" id="detailInput">(none)</pre>
-      <div class="detail-label">Sample Output</div>
-      <pre class="detail-pre" id="detailOutput"></pre>
+<!-- ══════════════ RUNNER TAB ══════════════ -->
+<div id="tabRunner" class="tab-content active">
+
+  <!-- Snippet sidebar -->
+  <aside class="snippet-sidebar">
+    <div class="sb-head">
+      Snippets
+      <button class="sb-add" onclick="openNewSnippet()">+ New</button>
+    </div>
+    <div class="snippet-list" id="snippetList">
+      <div class="sb-empty">No snippets saved yet.<br>Click <strong>+ New</strong> to create one.</div>
     </div>
   </aside>
 
-  <div class="main-area">
+  <!-- Editor -->
+  <div class="editor-area">
     <div class="toolbar">
-      <label>Language:</label>
-      <select id="langSelect">
+      <label>Language</label>
+      <select id="langSelect" onchange="onLangChange()">
         <option value="python3">Python 3</option>
-        <option value="cpp">C++ (g++17)</option>
+        <option value="cpp">C++17</option>
         <option value="java">Java</option>
       </select>
-      <button class="btn btn-secondary" onclick="loadStarter()" id="starterBtn" style="display:none">Load Starter</button>
-      <button class="btn btn-primary" id="submitBtn" disabled onclick="submitCode()">
+      <input class="snippet-name-input" id="snippetNameInput" placeholder="Snippet name…" />
+      <button class="btn btn-save" onclick="saveCurrentSnippet()">Save</button>
+      <button class="btn btn-run" id="runBtn" onclick="runCode()">
         <div class="spinner" id="spinner"></div>
-        <span id="btnText">Submit</span>
+        <span id="btnText">▶ Run</span>
       </button>
     </div>
 
-    <textarea id="code" spellcheck="false" placeholder="Select a problem on the left, write your solution, then click Submit…&#10;&#10;Shortcut: Ctrl+Enter to submit"></textarea>
-
-    <div class="results-panel">
-      <div class="results-header">
-        Output
-        <span class="verdict" id="verdict" style="display:none"></span>
-        <span id="score" style="font-size:0.78rem;color:#64748b;margin-left:auto"></span>
+    <div class="code-pane">
+      <div class="editor-wrap">
+        <textarea class="code" id="code" spellcheck="false"
+          placeholder="Write your code here…&#10;&#10;Ctrl+Enter to run"></textarea>
       </div>
-      <div class="results-body" id="resultsBody">
-        <div class="placeholder">Submit your code to see test results.</div>
+
+      <div class="stdin-bar">
+        <span>stdin</span>
+        <textarea class="stdin" id="stdin" placeholder="Optional input for your program…"></textarea>
+      </div>
+    </div>
+
+    <div class="output-panel">
+      <div class="output-header">
+        Output
+        <span class="status-chip" id="statusChip" style="display:none"></span>
+        <span class="time-label" id="timeLabel"></span>
+      </div>
+      <div class="output-body" id="outputBody">
+        <span class="out-placeholder">Press ▶ Run to execute your code.</span>
       </div>
     </div>
   </div>
@@ -260,347 +273,368 @@
 <!-- ══════════════ HISTORY TAB ══════════════ -->
 <div id="tabHistory" class="tab-content">
   <div class="page">
-    <h2>Submission History</h2>
-    <div style="display:flex;gap:10px;margin-bottom:16px">
+    <h2>Execution History</h2>
+    <div style="margin-bottom:14px">
       <button class="btn btn-secondary" onclick="loadHistory()">Refresh</button>
-      <select id="historyFilter" onchange="loadHistory()" style="font-size:0.8rem">
-        <option value="">All Problems</option>
-      </select>
     </div>
     <table>
       <thead>
-        <tr><th>#</th><th>Time</th><th>Problem</th><th>Language</th><th>Status</th><th>Score</th></tr>
+        <tr><th>#</th><th>Time</th><th>Language</th><th>Status</th><th>Code preview</th></tr>
       </thead>
       <tbody id="historyBody">
-        <tr><td colspan="6" style="text-align:center;color:#475569;padding:20px">Loading history…</td></tr>
+        <tr><td colspan="5" style="text-align:center;color:#475569;padding:20px">Loading…</td></tr>
       </tbody>
     </table>
   </div>
 </div>
 
-<!-- ══════════════ STATS TAB ══════════════ -->
-<div id="tabStats" class="tab-content">
-  <div class="page">
-    <h2>Problem Statistics</h2>
-    <div class="stats-grid" id="statsGrid">
-      <div class="placeholder">Loading statistics…</div>
+<!-- ══════════════ MODAL — New/Edit Snippet ══════════════ -->
+<div class="modal-overlay hidden" id="modalOverlay">
+  <div class="modal">
+    <h3 id="modalTitle">New Snippet</h3>
+    <label>Name</label>
+    <input type="text" id="modalName" placeholder="e.g. Binary Search" />
+    <label>Language</label>
+    <select id="modalLang">
+      <option value="python3">Python 3</option>
+      <option value="cpp">C++17</option>
+      <option value="java">Java</option>
+    </select>
+    <div class="modal-btns">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-run" onclick="confirmModal()">Confirm</button>
     </div>
   </div>
 </div>
 
-<!-- ══════════════ ADMIN TAB ══════════════ -->
-<div id="tabAdmin" class="tab-content">
-  <div class="page">
-    <h2>Admin — Upload Problem</h2>
-    <div class="upload-form">
-      <label>Problem ID (e.g. <code>gcd_problem</code>)</label>
-      <input type="text" id="uploadProblemId" placeholder="problem_id" />
-
-      <label>Problem ZIP File</label>
-      <input type="file" id="uploadFile" accept=".zip" />
-
-      <button class="btn btn-primary" onclick="uploadProblem()" style="margin-top:14px;width:100%;justify-content:center">
-        Upload &amp; Sync to EFS
-      </button>
-
-      <div id="uploadMsg" style="display:none"></div>
-
-      <div class="upload-note">
-        ZIP must contain paired files: <code>1.in</code> / <code>1.out</code>, <code>2.in</code> / <code>2.out</code>, …<br>
-        The Sync Lambda will: download from S3 → parse → encrypt with Fernet → write to EFS.<br>
-        This admin panel simulates the S3 → Sync Lambda → EFS pipeline locally.
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- API config -->
+<!-- API bar -->
 <div class="api-bar">
-  <div class="api-status" id="apiStatus"></div>
+  <div class="api-dot" id="apiDot"></div>
   API:
-  <input type="text" id="apiUrl" value="http://localhost:5000" onchange="init()" />
+  <input type="text" id="apiUrl" value="http://localhost:5000" onchange="checkApi()" />
 </div>
 
 <script>
-// ── State ──────────────────────────────────────────────────────────────────
-let selectedProblem = null;
+// ══════════════════════════════════════════════════════
+//  State
+// ══════════════════════════════════════════════════════
+const STORAGE_KEY = 'cee_snippets_v2';
+let snippets = [];       // [{id, name, lang, code, stdin}]
+let activeSnippetId = null;
+let modalMode = null;    // 'new' | 'edit'
+let editingId = null;
 
-const STARTERS = {
-  python3: {
-    hello_world:    'print("Hello, World!")\n',
-    sum_two:        'a, b = map(int, input().split())\nprint(a + b)\n',
-    fibonacci:      'n = int(input())\na, b = 1, 1\nfor _ in range(n - 1):\n    a, b = b, a + b\nprint(a)\n',
-    prime_check:    'import math\nn = int(input())\nif n < 2: print("NO")\nelif all(n % i != 0 for i in range(2, int(math.sqrt(n))+1)): print("YES")\nelse: print("NO")\n',
-    reverse_string: 's = input()\nprint(s[::-1])\n',
-    sort_array:     'n = int(input())\narr = list(map(int, input().split()))\nprint(*sorted(arr))\n',
-  },
-  cpp: {
-    hello_world:    '#include <iostream>\nusing namespace std;\nint main() {\n    cout << "Hello, World!" << endl;\n    return 0;\n}\n',
-    sum_two:        '#include <iostream>\nusing namespace std;\nint main() {\n    long long a, b;\n    cin >> a >> b;\n    cout << a + b << endl;\n    return 0;\n}\n',
-    fibonacci:      '#include <iostream>\nusing namespace std;\nint main() {\n    int n; cin >> n;\n    long long a = 1, b = 1;\n    for (int i = 1; i < n; i++) { long long c = a + b; a = b; b = c; }\n    cout << a << endl;\n    return 0;\n}\n',
-    prime_check:    '#include <iostream>\n#include <cmath>\nusing namespace std;\nbool isPrime(long long n) {\n    if (n < 2) return false;\n    for (long long i = 2; i <= sqrt(n); i++) if (n % i == 0) return false;\n    return true;\n}\nint main() {\n    long long n; cin >> n;\n    cout << (isPrime(n) ? "YES" : "NO") << endl;\n    return 0;\n}\n',
-    reverse_string: '#include <iostream>\n#include <algorithm>\nusing namespace std;\nint main() {\n    string s; cin >> s;\n    reverse(s.begin(), s.end());\n    cout << s << endl;\n    return 0;\n}\n',
-    sort_array:     '#include <iostream>\n#include <vector>\n#include <algorithm>\nusing namespace std;\nint main() {\n    int n; cin >> n;\n    vector<long long> a(n);\n    for (auto& x : a) cin >> x;\n    sort(a.begin(), a.end());\n    for (int i = 0; i < n; i++) cout << a[i] << (i+1<n?" ":"\\n");\n    return 0;\n}\n',
-  },
-  java: {
-    hello_world:    'public class Solution {\n    public static void main(String[] args) {\n        System.out.println("Hello, World!");\n    }\n}\n',
-    sum_two:        'import java.util.Scanner;\npublic class Solution {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        long a = sc.nextLong(), b = sc.nextLong();\n        System.out.println(a + b);\n    }\n}\n',
-    fibonacci:      'import java.util.Scanner;\npublic class Solution {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        int n = sc.nextInt();\n        long a = 1, b = 1;\n        for (int i = 1; i < n; i++) { long c = a + b; a = b; b = c; }\n        System.out.println(a);\n    }\n}\n',
-    prime_check:    'import java.util.Scanner;\npublic class Solution {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        long n = sc.nextLong();\n        if (n < 2) { System.out.println("NO"); return; }\n        for (long i = 2; i * i <= n; i++) if (n % i == 0) { System.out.println("NO"); return; }\n        System.out.println("YES");\n    }\n}\n',
-    reverse_string: 'import java.util.Scanner;\npublic class Solution {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        System.out.println(new StringBuilder(sc.next()).reverse());\n    }\n}\n',
-    sort_array:     'import java.util.*;\npublic class Solution {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        int n = sc.nextInt();\n        long[] a = new long[n];\n        for (int i = 0; i < n; i++) a[i] = sc.nextLong();\n        Arrays.sort(a);\n        StringBuilder sb = new StringBuilder();\n        for (int i = 0; i < n; i++) { if (i > 0) sb.append(\' \'); sb.append(a[i]); }\n        System.out.println(sb);\n    }\n}\n',
-  },
+const DEFAULT_CODE = {
+  python3: '# Python 3\nprint("Hello, World!")\n',
+  cpp:     '#include <iostream>\nusing namespace std;\nint main() {\n    cout << "Hello, World!" << endl;\n    return 0;\n}\n',
+  java:    'public class Solution {\n    public static void main(String[] args) {\n        System.out.println("Hello, World!");\n    }\n}\n',
 };
 
-// ── API helpers ────────────────────────────────────────────────────────────
-function apiBase() { return document.getElementById('apiUrl').value.replace(/\/$/, ''); }
-
-async function apiFetch(path, opts = {}) {
-  const res = await fetch(apiBase() + path, opts);
-  const data = await res.json();
-  return { ok: res.ok, status: res.status, data };
+// ══════════════════════════════════════════════════════
+//  Persistence
+// ══════════════════════════════════════════════════════
+function loadSnippets() {
+  try { snippets = JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
+  catch { snippets = []; }
 }
-
-// ── Tab switching ──────────────────────────────────────────────────────────
-function switchTab(name, btn) {
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-  btn.classList.add('active');
-  document.getElementById('tab' + name).classList.add('active');
-
-  if (name === 'History') loadHistory();
-  if (name === 'Stats')   loadStats();
+function saveSnippets() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(snippets));
 }
+function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
 
-// ── Init ───────────────────────────────────────────────────────────────────
-async function init() {
-  try {
-    const { ok, data } = await apiFetch('/problems');
-    if (!ok) throw new Error('bad response');
-    renderProblems(data.problems || []);
-    populateHistoryFilter(data.problems || []);
-    document.getElementById('apiStatus').classList.add('ok');
-  } catch {
-    document.getElementById('problemList').innerHTML =
-      `<div class="placeholder">❌ Cannot reach API.<br><br>Run:<br><code style="color:#93c5fd">python local/server.py</code></div>`;
-    document.getElementById('apiStatus').classList.remove('ok');
+// ══════════════════════════════════════════════════════
+//  Snippet sidebar
+// ══════════════════════════════════════════════════════
+function renderSnippetList() {
+  const el = document.getElementById('snippetList');
+  if (!snippets.length) {
+    el.innerHTML = '<div class="sb-empty">No snippets saved yet.<br>Click <strong>+ New</strong> to create one.</div>';
+    return;
   }
-}
-
-// ── Problems ───────────────────────────────────────────────────────────────
-function renderProblems(problems) {
-  const list = document.getElementById('problemList');
-  list.innerHTML = problems.map((p, i) => `
-    <div class="problem-item" data-id="${p.id}" onclick='selectProblem(${JSON.stringify(p)})'>
-      <div class="p-title">${i+1}. ${p.title}
-        <span class="badge-diff ${p.difficulty}">${p.difficulty}</span>
+  el.innerHTML = snippets.map(s => `
+    <div class="snippet-item${s.id === activeSnippetId ? ' active' : ''}" onclick="loadSnippet('${s.id}')">
+      <div class="sn-name">${esc(s.name)}</div>
+      <div class="sn-lang">${langLabel(s.lang)}</div>
+      <div class="snippet-actions">
+        <button class="sn-btn" onclick="editSnippet(event,'${s.id}')" title="Rename">✏</button>
+        <button class="sn-btn del" onclick="deleteSnippet(event,'${s.id}')" title="Delete">✕</button>
       </div>
-      <div class="p-desc">${p.description}</div>
     </div>`).join('');
 }
 
-function selectProblem(p) {
-  selectedProblem = p;
-  document.querySelectorAll('.problem-item').forEach(el =>
-    el.classList.toggle('active', el.dataset.id === p.id));
-
-  document.getElementById('problemDetail').style.display = '';
-  document.getElementById('detailDesc').textContent = p.description;
-  document.getElementById('detailConstraints').textContent = p.constraints || '—';
-  document.getElementById('detailInput').textContent  = p.sample_input  || '(no input)';
-  document.getElementById('detailOutput').textContent = p.sample_output || '';
-
-  loadStarter();
-  document.getElementById('submitBtn').disabled = false;
-  document.getElementById('starterBtn').style.display = '';
-  resetResults();
+function langLabel(l) {
+  return l === 'python3' ? 'Python 3' : l === 'cpp' ? 'C++17' : 'Java';
 }
 
-function loadStarter() {
-  if (!selectedProblem) return;
-  const lang = document.getElementById('langSelect').value;
-  const starter = (STARTERS[lang] || {})[selectedProblem.id] || '';
-  if (starter) document.getElementById('code').value = starter;
+function loadSnippet(id) {
+  const s = snippets.find(x => x.id === id);
+  if (!s) return;
+  activeSnippetId = id;
+  document.getElementById('langSelect').value = s.lang;
+  document.getElementById('code').value = s.code;
+  document.getElementById('stdin').value = s.stdin || '';
+  document.getElementById('snippetNameInput').value = s.name;
+  clearOutput();
+  renderSnippetList();
 }
 
-document.getElementById('langSelect').addEventListener('change', () => {
-  if (selectedProblem) loadStarter();
-});
+function saveCurrentSnippet() {
+  const name = document.getElementById('snippetNameInput').value.trim();
+  const lang  = document.getElementById('langSelect').value;
+  const code  = document.getElementById('code').value;
+  const stdin = document.getElementById('stdin').value;
 
-// ── Submit ─────────────────────────────────────────────────────────────────
-async function submitCode() {
-  if (!selectedProblem) return;
-  const btn = document.getElementById('submitBtn');
+  if (!name) { document.getElementById('snippetNameInput').focus(); return; }
+
+  if (activeSnippetId) {
+    const s = snippets.find(x => x.id === activeSnippetId);
+    if (s) { s.name = name; s.lang = lang; s.code = code; s.stdin = stdin; }
+  } else {
+    const s = { id: genId(), name, lang, code, stdin };
+    snippets.unshift(s);
+    activeSnippetId = s.id;
+  }
+  saveSnippets();
+  renderSnippetList();
+}
+
+// ══════════════════════════════════════════════════════
+//  Modal — new snippet
+// ══════════════════════════════════════════════════════
+function openNewSnippet() {
+  modalMode = 'new';
+  document.getElementById('modalTitle').textContent = 'New Snippet';
+  document.getElementById('modalName').value = '';
+  document.getElementById('modalLang').value = document.getElementById('langSelect').value;
+  document.getElementById('modalOverlay').classList.remove('hidden');
+  document.getElementById('modalName').focus();
+}
+
+function editSnippet(e, id) {
+  e.stopPropagation();
+  const s = snippets.find(x => x.id === id);
+  if (!s) return;
+  modalMode = 'edit'; editingId = id;
+  document.getElementById('modalTitle').textContent = 'Rename Snippet';
+  document.getElementById('modalName').value = s.name;
+  document.getElementById('modalLang').value = s.lang;
+  document.getElementById('modalOverlay').classList.remove('hidden');
+  document.getElementById('modalName').focus();
+}
+
+function confirmModal() {
+  const name = document.getElementById('modalName').value.trim();
+  const lang  = document.getElementById('modalLang').value;
+  if (!name) return;
+
+  if (modalMode === 'new') {
+    const s = { id: genId(), name, lang, code: DEFAULT_CODE[lang], stdin: '' };
+    snippets.unshift(s);
+    saveSnippets();
+    closeModal();
+    loadSnippet(s.id);
+  } else if (modalMode === 'edit') {
+    const s = snippets.find(x => x.id === editingId);
+    if (s) { s.name = name; s.lang = lang; }
+    saveSnippets();
+    closeModal();
+    renderSnippetList();
+    if (activeSnippetId === editingId) {
+      document.getElementById('langSelect').value = lang;
+      document.getElementById('snippetNameInput').value = name;
+    }
+  }
+}
+
+function closeModal() { document.getElementById('modalOverlay').classList.add('hidden'); }
+
+function deleteSnippet(e, id) {
+  e.stopPropagation();
+  snippets = snippets.filter(x => x.id !== id);
+  saveSnippets();
+  if (activeSnippetId === id) {
+    activeSnippetId = null;
+    document.getElementById('code').value = DEFAULT_CODE[document.getElementById('langSelect').value];
+    document.getElementById('stdin').value = '';
+    document.getElementById('snippetNameInput').value = '';
+    clearOutput();
+  }
+  renderSnippetList();
+}
+
+// ══════════════════════════════════════════════════════
+//  Language change
+// ══════════════════════════════════════════════════════
+function onLangChange() {
+  if (!activeSnippetId) {
+    document.getElementById('code').value = DEFAULT_CODE[document.getElementById('langSelect').value];
+  }
+}
+
+// ══════════════════════════════════════════════════════
+//  Run
+// ══════════════════════════════════════════════════════
+function apiBase() { return document.getElementById('apiUrl').value.replace(/\/$/, ''); }
+
+async function runCode() {
+  const btn = document.getElementById('runBtn');
   btn.disabled = true;
   btn.classList.add('loading');
   document.getElementById('spinner').style.display = 'block';
   document.getElementById('btnText').textContent = 'Running…';
-  resetResults();
+
+  const chip = document.getElementById('statusChip');
+  chip.style.display = 'none';
+  document.getElementById('timeLabel').textContent = '';
+  document.getElementById('outputBody').innerHTML = '<span class="out-placeholder">Executing…</span>';
 
   try {
-    const { ok, data } = await apiFetch('/submit', {
+    const res = await fetch(apiBase() + '/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         language:    document.getElementById('langSelect').value,
         source_code: document.getElementById('code').value,
-        problem_id:  selectedProblem.id,
+        stdin:       document.getElementById('stdin').value,
       }),
     });
-    if (!ok && !data.results) { renderError(data.error || 'Server error'); return; }
-    renderResults(data);
-  } catch (e) {
-    renderError('Network error: ' + e.message);
+    const data = await res.json();
+    renderOutput(data);
+  } catch (err) {
+    renderOutput({ status: 'ERROR', output: '', stderr: '', error: 'Network error: ' + err.message });
   } finally {
     btn.disabled = false;
     btn.classList.remove('loading');
     document.getElementById('spinner').style.display = 'none';
-    document.getElementById('btnText').textContent = 'Submit';
+    document.getElementById('btnText').textContent = '▶ Run';
   }
 }
 
+function renderOutput(data) {
+  const chip = document.getElementById('statusChip');
+  chip.style.display = '';
+  chip.textContent = data.status;
+  chip.className = 'status-chip ' + data.status;
+
+  if (data.time_ms) document.getElementById('timeLabel').textContent = data.time_ms + ' ms';
+
+  let html = '';
+  if (data.status === 'COMPILATION_ERROR') {
+    html = `<div class="out-error">${esc(data.error || data.stderr || 'Compilation failed')}</div>`;
+  } else if (data.status === 'ERROR') {
+    html = `<div class="out-error">${esc(data.error || 'Unknown error')}</div>`;
+  } else if (data.status === 'TIME_LIMIT_EXCEEDED') {
+    html = `<div class="out-error">Time limit exceeded (5 s)</div>`;
+  } else {
+    if (data.output)
+      html += `<div class="out-stdout">${esc(data.output)}</div>`;
+    else
+      html += `<div class="out-placeholder">(no output)</div>`;
+    if (data.stderr)
+      html += `<div class="out-stderr">stderr: ${esc(data.stderr)}</div>`;
+    if (data.status === 'RUNTIME_ERROR' && !html.includes('stderr'))
+      html += `<div class="out-error">Runtime error (non-zero exit)</div>`;
+  }
+  document.getElementById('outputBody').innerHTML = html;
+}
+
+function clearOutput() {
+  document.getElementById('statusChip').style.display = 'none';
+  document.getElementById('timeLabel').textContent = '';
+  document.getElementById('outputBody').innerHTML = '<span class="out-placeholder">Press ▶ Run to execute your code.</span>';
+}
+
+// ══════════════════════════════════════════════════════
+//  Keyboard shortcut
+// ══════════════════════════════════════════════════════
 document.getElementById('code').addEventListener('keydown', e => {
-  if (e.key === 'Tab') { e.preventDefault(); const ta = e.target, s = ta.selectionStart; ta.value = ta.value.slice(0, s) + '    ' + ta.value.slice(ta.selectionEnd); ta.selectionStart = ta.selectionEnd = s + 4; }
-  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') submitCode();
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const ta = e.target, s = ta.selectionStart;
+    ta.value = ta.value.slice(0, s) + '    ' + ta.value.slice(ta.selectionEnd);
+    ta.selectionStart = ta.selectionEnd = s + 4;
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') runCode();
 });
 
-// ── Results rendering ──────────────────────────────────────────────────────
-function resetResults() {
-  document.getElementById('resultsBody').innerHTML = '<div class="placeholder">Running…</div>';
-  document.getElementById('verdict').style.display = 'none';
-  document.getElementById('score').textContent = '';
-}
+document.getElementById('modalName').addEventListener('keydown', e => {
+  if (e.key === 'Enter') confirmModal();
+  if (e.key === 'Escape') closeModal();
+});
+document.getElementById('modalOverlay').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeModal();
+});
 
-function renderResults(data) {
-  const v = document.getElementById('verdict');
-  v.style.display = ''; v.textContent = data.status; v.className = 'verdict ' + data.status;
-  document.getElementById('score').textContent = `${data.passed ?? 0} / ${data.total ?? 0} passed`;
-
-  if (data.error && !(data.results || []).length) {
-    document.getElementById('resultsBody').innerHTML = `<pre style="color:#fca5a5;font-size:0.77rem;white-space:pre-wrap">${esc(data.error)}</pre>`;
-    return;
-  }
-  document.getElementById('resultsBody').innerHTML = (data.results || []).map(r => {
-    let detail = '';
-    if (r.status === 'WRONG_ANSWER')
-      detail = `<span style="color:#475569">Expected:</span> ${esc(r.expected||'')}  <span style="color:#475569">Got:</span> ${esc(r.actual||'')}`;
-    else if (r.stderr)
-      detail = `<span style="color:#475569">stderr:</span> ${esc(r.stderr)}`;
-    return `<div class="tc-row">
-      <span class="tc-num">Test ${r.test_case}</span>
-      <span class="tc-status ${r.status}">${r.status.replace(/_/g,' ')}</span>
-      <span class="tc-detail">${detail}</span>
-    </div>`;
-  }).join('') || '<div class="placeholder">No test details.</div>';
-}
-
-function renderError(msg) {
-  const v = document.getElementById('verdict');
-  v.style.display = ''; v.textContent = 'ERROR'; v.className = 'verdict ERROR';
-  document.getElementById('resultsBody').innerHTML = `<div style="color:#fca5a5;font-size:0.83rem;padding:8px">${esc(msg)}</div>`;
-}
-
-// ── History ────────────────────────────────────────────────────────────────
-function populateHistoryFilter(problems) {
-  const sel = document.getElementById('historyFilter');
-  sel.innerHTML = '<option value="">All Problems</option>' +
-    problems.map(p => `<option value="${p.id}">${p.title}</option>`).join('');
-}
-
+// ══════════════════════════════════════════════════════
+//  History tab
+// ══════════════════════════════════════════════════════
 async function loadHistory() {
-  const pid = document.getElementById('historyFilter').value;
-  const qs  = pid ? `?problem_id=${pid}&limit=100` : '?limit=100';
   try {
-    const { data } = await apiFetch('/history' + qs);
-    const subs = data.submissions || [];
+    const res = await fetch(apiBase() + '/history?limit=100');
+    const data = await res.json();
+    const subs = (data.submissions || []).filter(s => s.problem_id !== '__free_run__' || true);
     if (!subs.length) {
-      document.getElementById('historyBody').innerHTML = '<tr><td colspan="6" style="text-align:center;color:#475569;padding:20px">No submissions yet.</td></tr>';
+      document.getElementById('historyBody').innerHTML = '<tr><td colspan="5" style="text-align:center;color:#475569;padding:20px">No executions yet.</td></tr>';
       return;
     }
     document.getElementById('historyBody').innerHTML = subs.map((s, i) => `
       <tr>
         <td style="color:#475569">${i+1}</td>
-        <td style="color:#64748b;font-size:0.73rem">${fmtTime(s.timestamp)}</td>
-        <td>${esc(s.problem_title || s.problem_id)}</td>
-        <td><span class="chip ${s.language}">${s.language}</span></td>
+        <td style="color:#64748b;font-size:0.72rem">${fmtTime(s.timestamp)}</td>
+        <td><span class="chip ${s.language}">${langLabel(s.language)}</span></td>
         <td><span class="chip ${s.status}">${s.status.replace(/_/g,' ')}</span></td>
-        <td style="color:#94a3b8">${s.passed ?? 0}/${s.total ?? 0}</td>
+        <td style="font-family:monospace;font-size:0.72rem;color:#64748b">${esc((s.source_code||'').slice(0,60).replace(/\n/g,'↵'))}</td>
       </tr>`).join('');
   } catch(e) {
-    document.getElementById('historyBody').innerHTML = `<tr><td colspan="6" style="color:#fca5a5;padding:12px">Error: ${esc(e.message)}</td></tr>`;
+    document.getElementById('historyBody').innerHTML = `<tr><td colspan="5" style="color:#fca5a5;padding:12px">Error: ${esc(e.message)}</td></tr>`;
   }
 }
 
 function fmtTime(iso) {
   if (!iso) return '—';
-  try {
-    const d = new Date(iso);
-    return d.toLocaleTimeString('vi-VN') + ' ' + d.toLocaleDateString('vi-VN');
-  } catch { return iso; }
+  try { const d = new Date(iso); return d.toLocaleTimeString() + ' ' + d.toLocaleDateString(); }
+  catch { return iso; }
 }
 
-// ── Statistics ─────────────────────────────────────────────────────────────
-async function loadStats() {
+// ══════════════════════════════════════════════════════
+//  Tab switching
+// ══════════════════════════════════════════════════════
+function switchTab(name, btn) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('tab' + name).classList.add('active');
+  if (name === 'History') loadHistory();
+}
+
+// ══════════════════════════════════════════════════════
+//  API check
+// ══════════════════════════════════════════════════════
+async function checkApi() {
   try {
-    const { data } = await apiFetch('/stats');
-    const stats = data.stats || {};
-    const entries = Object.entries(stats);
-    if (!entries.length) {
-      document.getElementById('statsGrid').innerHTML = '<div class="placeholder">No data yet — submit some solutions!</div>';
-      return;
-    }
-    document.getElementById('statsGrid').innerHTML = entries.map(([id, s]) => `
-      <div class="stat-card">
-        <div class="s-title">${esc(s.title || id)}</div>
-        <div class="s-row"><span class="s-label">Total Submissions</span><span class="s-val">${s.total}</span></div>
-        <div class="s-row"><span class="s-label">Accepted</span><span class="s-val" style="color:#86efac">${s.accepted}</span></div>
-        <div class="s-row"><span class="s-label">Acceptance Rate</span><span class="s-val">${s.acceptance_rate}%</span></div>
-        <div class="progress-bar-wrap">
-          <div class="progress-bar" style="width:${s.acceptance_rate}%;background:${s.acceptance_rate>=60?'#22c55e':s.acceptance_rate>=30?'#f59e0b':'#ef4444'}"></div>
-        </div>
-      </div>`).join('');
-  } catch(e) {
-    document.getElementById('statsGrid').innerHTML = `<div class="placeholder" style="color:#fca5a5">Error: ${esc(e.message)}</div>`;
+    const res = await fetch(apiBase() + '/problems');
+    document.getElementById('apiDot').classList.toggle('ok', res.ok);
+  } catch {
+    document.getElementById('apiDot').classList.remove('ok');
   }
 }
 
-// ── Admin upload ───────────────────────────────────────────────────────────
-async function uploadProblem() {
-  const pid  = document.getElementById('uploadProblemId').value.trim();
-  const file = document.getElementById('uploadFile').files[0];
-  const msg  = document.getElementById('uploadMsg');
-  msg.style.display = 'none';
-
-  if (!pid) { showMsg(msg, 'err', 'Please enter a problem ID.'); return; }
-  if (!file) { showMsg(msg, 'err', 'Please select a ZIP file.'); return; }
-
-  const fd = new FormData();
-  fd.append('problem_id', pid);
-  fd.append('file', file);
-
-  try {
-    const res  = await fetch(apiBase() + '/admin/upload', { method: 'POST', body: fd });
-    const data = await res.json();
-    if (res.ok) showMsg(msg, 'ok', data.message);
-    else        showMsg(msg, 'err', data.error || 'Upload failed');
-  } catch(e) {
-    showMsg(msg, 'err', 'Network error: ' + e.message);
-  }
-}
-
-function showMsg(el, cls, text) {
-  el.className = 'upload-msg ' + cls;
-  el.textContent = text;
-  el.style.display = 'block';
-}
-
-// ── Utils ──────────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════
+//  Utils
+// ══════════════════════════════════════════════════════
 function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-// ── Boot ───────────────────────────────────────────────────────────────────
-init();
+// ══════════════════════════════════════════════════════
+//  Boot
+// ══════════════════════════════════════════════════════
+loadSnippets();
+renderSnippetList();
+checkApi();
+// Load first snippet if any
+if (snippets.length) loadSnippet(snippets[0].id);
+else document.getElementById('code').value = DEFAULT_CODE.python3;
 </script>
 </body>
 </html>

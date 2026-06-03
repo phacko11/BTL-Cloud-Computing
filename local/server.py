@@ -346,6 +346,52 @@ def _run_all(test_cases: list, cmd: list) -> dict:
     return {'status': overall, 'passed': passed, 'total': len(test_cases), 'results': results}
 
 
+# ── Single execution (for /run endpoint) ──────────────────────────────────
+
+def _exec_once(language: str, source_code: str, stdin_input: str, work_dir: str):
+    """Compile (if needed) and run once with given stdin. Returns (status, stdout, stderr)."""
+    try:
+        if language == 'python3':
+            src = Path(work_dir) / 'solution.py'
+            src.write_text(source_code, encoding='utf-8')
+            cmd = [PYTHON_EXE, str(src)]
+        elif language == 'cpp':
+            src = Path(work_dir) / 'solution.cpp'
+            exe = Path(work_dir) / ('solution.exe' if os.name == 'nt' else 'solution')
+            src.write_text(source_code, encoding='utf-8')
+            try:
+                cp = subprocess.run(['g++', '-O2', '-std=c++17', '-o', str(exe), str(src)],
+                                    capture_output=True, text=True, timeout=30)
+            except FileNotFoundError:
+                return 'ERROR', '', 'g++ not found. Install MinGW-w64.'
+            if cp.returncode != 0:
+                return 'COMPILATION_ERROR', '', cp.stderr[:2048]
+            cmd = [str(exe)]
+        else:  # java
+            if 'class Solution' not in source_code:
+                return 'COMPILATION_ERROR', '', 'Java class must be named "Solution"'
+            src = Path(work_dir) / 'Solution.java'
+            src.write_text(source_code, encoding='utf-8')
+            try:
+                cp = subprocess.run(['javac', str(src)], capture_output=True, text=True,
+                                    timeout=30, cwd=work_dir)
+            except FileNotFoundError:
+                return 'ERROR', '', 'javac not found. Install JDK.'
+            if cp.returncode != 0:
+                return 'COMPILATION_ERROR', '', cp.stderr[:2048]
+            cmd = ['java', '-cp', work_dir, 'Solution']
+
+        proc = subprocess.run(cmd, input=stdin_input, capture_output=True, text=True,
+                              timeout=EXECUTION_TIMEOUT)
+        stdout = proc.stdout[:MAX_OUTPUT_BYTES]
+        stderr = proc.stderr[:512].strip() if proc.stderr else ''
+        if proc.returncode != 0:
+            return 'RUNTIME_ERROR', stdout, stderr
+        return 'OK', stdout, stderr
+    except subprocess.TimeoutExpired:
+        return 'TIME_LIMIT_EXCEEDED', '', ''
+
+
 # ── Rate limiter ───────────────────────────────────────────────────────────
 
 def _check_rate_limit(ip: str) -> bool:
@@ -462,6 +508,48 @@ def make_app():
                 s['acceptance_rate'] = round(s['accepted'] / s['total'] * 100, 1)
 
         return jsonify({'stats': stats})
+
+    # ── Run (free execution with custom stdin) ──
+    @app.route('/run', methods=['POST', 'OPTIONS'])
+    def run_free():
+        if request.method == 'OPTIONS':
+            return jsonify({})
+
+        ip = request.remote_addr or '127.0.0.1'
+        if not _check_rate_limit(ip):
+            return jsonify({'error': 'Rate limit exceeded (10 runs/min)'}), 429
+
+        data = request.get_json(force=True, silent=True) or {}
+        language    = data.get('language', '').lower().strip()
+        source_code = data.get('source_code', '').strip()
+        stdin_input = data.get('stdin', '')
+
+        if language not in ('python3', 'cpp', 'java'):
+            return jsonify({'error': 'Unsupported language'}), 400
+        if not source_code:
+            return jsonify({'error': 'source_code is required'}), 400
+
+        work_dir = tempfile.mkdtemp(prefix='exec_')
+        t0 = time.time()
+        try:
+            status, output, stderr = _exec_once(language, source_code, stdin_input, work_dir)
+        finally:
+            shutil.rmtree(work_dir, ignore_errors=True)
+        elapsed = round((time.time() - t0) * 1000)
+
+        record = {
+            'id': str(uuid.uuid4()),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'problem_id': '__free_run__',
+            'problem_title': 'Free Run',
+            'language': language,
+            'status': status,
+            'passed': 0, 'total': 0,
+            'source_code': source_code,
+        }
+        _save_submission(record)
+
+        return jsonify({'status': status, 'output': output, 'stderr': stderr, 'time_ms': elapsed})
 
     # ── Admin: upload problem zip ──
     @app.route('/admin/upload', methods=['POST', 'OPTIONS'])
