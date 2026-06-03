@@ -1,5 +1,7 @@
 # Report (keep local only)
 report/
+*.docx
+*.doc
 
 # Local demo secrets & encrypted cache
 local/secrets.json
