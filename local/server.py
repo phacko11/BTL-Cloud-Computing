@@ -40,7 +40,8 @@ SECRETS_FILE   = BASE_DIR / 'secrets.json'
 HISTORY_FILE   = BASE_DIR / 'history.json'
 PROBLEMS_DIR   = BASE_DIR.parent / 'problems'
 
-EXECUTION_TIMEOUT   = 30.0   # longer for interactive sessions
+EXECUTION_TIMEOUT         = 5.0    # matches AWS Lambda default
+EXECUTION_TIMEOUT_INTERACTIVE = 30.0  # interactive sessions need more time
 MAX_OUTPUT_BYTES    = 64 * 1024
 
 PYTHON_EXE = sys.executable
@@ -164,11 +165,29 @@ def sync_from_zip(zip_bytes: bytes, problem_id: str):
     return len(test_cases)
 
 # ── Compile helper ─────────────────────────────────────────────────────────
-def _compile(language: str, source_code: str, work_dir: str):
-    """Returns (cmd, error_msg). error_msg is None on success."""
+def _sanitize_path(text: str, work_dir: str) -> str:
+    """Replace real temp paths with Lambda-style /var/task paths."""
+    # Handle both Windows backslash and forward slash variants
+    cleaned = text.replace(work_dir, '/var/task')
+    cleaned = cleaned.replace(work_dir.replace('\\', '/'), '/var/task')
+    return cleaned
+
+def _lambda_env() -> dict:
+    """Return env vars that mimic AWS Lambda runtime environment."""
     env = os.environ.copy()
     env['PYTHONIOENCODING'] = 'utf-8'
     env['PYTHONUTF8'] = '1'
+    env['AWS_LAMBDA_FUNCTION_NAME'] = 'coderunner'
+    env['AWS_LAMBDA_FUNCTION_VERSION'] = '$LATEST'
+    env['AWS_REGION'] = 'ap-southeast-1'
+    env['AWS_EXECUTION_ENV'] = 'AWS_Lambda_python3.11'
+    env['LAMBDA_TASK_ROOT'] = '/var/task'
+    env['LAMBDA_RUNTIME_DIR'] = '/var/runtime'
+    return env
+
+def _compile(language: str, source_code: str, work_dir: str):
+    """Returns (cmd, error_msg, env). error_msg is None on success."""
+    env = _lambda_env()
 
     if language == 'python3':
         src = Path(work_dir) / 'solution.py'
@@ -185,13 +204,18 @@ def _compile(language: str, source_code: str, work_dir: str):
         except FileNotFoundError:
             return None, 'g++ not found. Install MinGW-w64.', env
         if cp.returncode != 0:
-            return None, cp.stderr[:2048], env
+            return None, _sanitize_path(cp.stderr[:2048], work_dir), env
         return [str(exe)], None, env
 
     else:  # java
-        if 'class Solution' not in source_code:
-            return None, 'Java class must be named "Solution"', env
-        src = Path(work_dir) / 'Solution.java'
+        import re as _re
+        match = _re.search(r'public\s+class\s+(\w+)', source_code)
+        if not match:
+            match = _re.search(r'class\s+(\w+)', source_code)
+        if not match:
+            return None, 'No Java class found in source code.', env
+        class_name = match.group(1)
+        src = Path(work_dir) / f'{class_name}.java'
         src.write_text(source_code, encoding='utf-8')
         try:
             cp = subprocess.run(['javac', str(src)], capture_output=True, text=True,
@@ -199,8 +223,8 @@ def _compile(language: str, source_code: str, work_dir: str):
         except FileNotFoundError:
             return None, 'javac not found. Install JDK.', env
         if cp.returncode != 0:
-            return None, cp.stderr[:2048], env
-        return ['java', '-cp', work_dir, 'Solution'], None, env
+            return None, _sanitize_path(cp.stderr[:2048], work_dir), env
+        return ['java', '-cp', work_dir, class_name], None, env
 
 # ── Batch run (for /run REST endpoint) ────────────────────────────────────
 def _exec_once(language, source_code, stdin_input, work_dir):
@@ -212,7 +236,7 @@ def _exec_once(language, source_code, stdin_input, work_dir):
         proc = subprocess.run(cmd, input=stdin_input, capture_output=True, text=True,
                               timeout=EXECUTION_TIMEOUT, encoding='utf-8', env=env)
         stdout = proc.stdout[:MAX_OUTPUT_BYTES]
-        stderr = proc.stderr[:512].strip() if proc.stderr else ''
+        stderr = _sanitize_path(proc.stderr[:512].strip(), work_dir) if proc.stderr else ''
         if proc.returncode != 0:
             return 'RUNTIME_ERROR', stdout, stderr
         return 'OK', stdout, stderr
@@ -220,15 +244,15 @@ def _exec_once(language, source_code, stdin_input, work_dir):
         return 'TIME_LIMIT_EXCEEDED', '', ''
 
 # ── Batch code execution (test-case based) ────────────────────────────────
-def _run_all(test_cases, cmd, env=None):
+def _run_all(test_cases, cmd, work_dir='', env=None):
     results, passed = [], 0
     for i, tc in enumerate(test_cases):
         expected = tc.get('output', '').strip()
         try:
             proc = subprocess.run(cmd, input=tc.get('input', ''), capture_output=True,
-                                  text=True, timeout=EXECUTION_TIMEOUT, env=env)
+                                  text=True, timeout=EXECUTION_TIMEOUT, encoding='utf-8', env=env)
             actual = proc.stdout[:MAX_OUTPUT_BYTES].strip()
-            stderr = proc.stderr[:512].strip() if proc.stderr else ''
+            stderr = _sanitize_path(proc.stderr[:512].strip(), work_dir) if proc.stderr else ''
             if actual == expected:
                 status = 'ACCEPTED'; passed += 1
             elif proc.returncode != 0 and not actual:
@@ -255,7 +279,7 @@ def run_code(language, source_code, test_cases):
         if err:
             return {'status': 'COMPILATION_ERROR', 'error': err,
                     'passed': 0, 'total': len(test_cases), 'results': []}
-        return _run_all(test_cases, cmd, env)
+        return _run_all(test_cases, cmd, work_dir, env)
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 
@@ -398,12 +422,13 @@ def make_app():
         start_time = time.time()
 
         def stream(pipe, pipe_type):
+            fd = pipe.fileno()
             try:
                 while True:
-                    chunk = pipe.read(128)
+                    chunk = os.read(fd, 4096)
                     if not chunk:
                         break
-                    text = chunk.decode('utf-8', errors='replace')
+                    text = _sanitize_path(chunk.decode('utf-8', errors='replace'), work_dir)
                     socketio.emit('terminal_output', {'type': pipe_type, 'text': text}, to=sid)
             except Exception:
                 pass
@@ -415,7 +440,7 @@ def make_app():
 
         def wait_proc():
             try:
-                proc.wait(timeout=EXECUTION_TIMEOUT)
+                proc.wait(timeout=EXECUTION_TIMEOUT_INTERACTIVE)
                 status = 'OK' if proc.returncode == 0 else 'RUNTIME_ERROR'
             except subprocess.TimeoutExpired:
                 proc.kill()

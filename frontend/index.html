@@ -5,6 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Code Execution Engine</title>
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <!-- CodeMirror 5 -->
+  <link  rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/codemirror.min.css"/>
+  <link  rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/theme/dracula.min.css"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/mode/python/python.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/mode/clike/clike.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/addon/edit/closebrackets.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/addon/edit/matchbrackets.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/addon/selection/active-line.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #e2e8f0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; user-select: none; }
@@ -78,12 +87,22 @@
     .btn.loading .spinner { display: block; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    textarea.code {
-      flex: 1; width: 100%; background: #0d1117; color: #c9d1d9;
-      border: none; font-family: 'Consolas', 'Fira Code', monospace;
-      font-size: 0.87rem; line-height: 1.65; padding: 14px 18px;
-      resize: none; outline: none; tab-size: 4; user-select: text;
+    textarea.code { display: none; }
+
+    /* CodeMirror overrides */
+    .CodeMirror {
+      flex: 1; height: 100%; width: 100%;
+      font-family: 'Consolas', 'Fira Code', 'JetBrains Mono', monospace;
+      font-size: 0.88rem; line-height: 1.65;
+      background: #282a36; /* dracula bg */
+      user-select: text;
     }
+    .CodeMirror-scroll { height: 100%; }
+    .CodeMirror-lines { padding: 14px 0; }
+    .CodeMirror-gutters { background: #282a36; border-right: 1px solid #3a3c4e; }
+    .CodeMirror-linenumber { color: #4e5166; padding: 0 10px 0 6px; }
+    .CodeMirror-activeline-background { background: #2f3145 !important; }
+    .CodeMirror-cursor { border-left: 2px solid #f8f8f2; }
 
     /* ── Terminal panel ── */
     .terminal-panel { height: 240px; min-height: 80px; max-height: 80vh; background: #080d14; display: flex; flex-direction: column; flex-shrink: 0; }
@@ -149,7 +168,9 @@
   <h1>Code Execution Engine</h1>
   <span class="sep">·</span>
   <span class="sub">Python · C++17 · Java</span>
-  <div class="conn-dot" id="connDot" title="Server connection"></div>
+  <span class="sep" style="margin-left:auto">·</span>
+  <span class="sub" style="color:#334155;font-size:0.72rem">BTL Cloud Computing &nbsp;|&nbsp; Phan Nguyễn Hữu Phước · Phạm Võ Quang Minh</span>
+  <div class="conn-dot" id="connDot" title="Server connection" style="margin-left:12px"></div>
 </header>
 
 <div class="tabs">
@@ -182,6 +203,9 @@
       </select>
       <input class="snippet-name-input" id="snippetNameInput" placeholder="Snippet name…" />
       <button class="btn btn-save" onclick="saveCurrentSnippet()">Save</button>
+      <button class="btn btn-secondary" onclick="openFile()" title="Open file">📂 Open</button>
+      <button class="btn btn-secondary" onclick="exportFile()" title="Export file">💾 Export</button>
+      <input type="file" id="fileInput" style="display:none" accept=".py,.cpp,.java,.txt" onchange="handleFileOpen(event)" />
       <button class="btn btn-run"  id="runBtn"  onclick="runInteractive()">
         <div class="spinner" id="spinner"></div>
         <span id="btnText">▶ Run</span>
@@ -189,8 +213,8 @@
       <button class="btn btn-kill" id="killBtn" onclick="killProc()">■ Stop</button>
     </div>
 
-    <textarea class="code" id="code" spellcheck="false"
-      placeholder="Write your code here…&#10;Ctrl+Enter to run"></textarea>
+    <div id="cmWrapper" style="flex:1;overflow:hidden;display:flex;flex-direction:column;"></div>
+    <textarea class="code" id="code"></textarea>
 
     <div class="hresize" id="hresize1"></div>
 
@@ -246,6 +270,46 @@
 </div>
 
 <script>
+// ════════════════════════════════════════════
+//  CodeMirror editor
+// ════════════════════════════════════════════
+const CM_MODE = { python3: 'python', cpp: 'text/x-c++src', java: 'text/x-java' };
+
+const editor = CodeMirror(document.getElementById('cmWrapper'), {
+  value: '',
+  mode: 'python',
+  theme: 'dracula',
+  lineNumbers: true,
+  indentUnit: 4,
+  tabSize: 4,
+  indentWithTabs: false,
+  autoCloseBrackets: true,
+  matchBrackets: true,
+  styleActiveLine: true,
+  lineWrapping: false,
+  extraKeys: {
+    'Tab': cm => cm.execCommand('insertSoftTab'),
+    'Ctrl-Enter': () => runInteractive(),
+    'Cmd-Enter':  () => runInteractive(),
+  },
+});
+
+// Proxy helpers so existing code keeps working
+const codeEl = {
+  get value() { return editor.getValue(); },
+  set value(v) { editor.setValue(v); },
+};
+// Override getElementById for 'code' to return proxy
+const _origGetById = document.getElementById.bind(document);
+document.getElementById = function(id) {
+  if (id === 'code') return codeEl;
+  return _origGetById(id);
+};
+
+function setEditorLang(lang) {
+  editor.setOption('mode', CM_MODE[lang] || 'python');
+}
+
 // ════════════════════════════════════════════
 //  Socket.IO
 // ════════════════════════════════════════════
@@ -376,9 +440,10 @@ function loadSnippet(id) {
   const s = snippets.find(x => x.id === id);
   if (!s) return;
   activeId = id;
-  document.getElementById('langSelect').value = s.lang;
-  document.getElementById('code').value = s.code || '';
-  document.getElementById('snippetNameInput').value = s.name;
+  _origGetById('langSelect').value = s.lang;
+  setEditorLang(s.lang);
+  editor.setValue(s.code || '');
+  _origGetById('snippetNameInput').value = s.name;
   clearTerm();
   renderSnippetList();
 }
@@ -401,7 +466,9 @@ function saveCurrentSnippet() {
 }
 
 function onLangChange() {
-  if (!activeId) document.getElementById('code').value = DEFAULT_CODE[document.getElementById('langSelect').value];
+  const lang = _origGetById('langSelect').value;
+  setEditorLang(lang);
+  if (!activeId) editor.setValue(DEFAULT_CODE[lang]);
 }
 
 // ── Modal ──
@@ -470,16 +537,6 @@ document.getElementById('modalOverlay').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeModal();
 });
 
-// ── Keyboard shortcut ──
-document.getElementById('code').addEventListener('keydown', e => {
-  if (e.key === 'Tab') {
-    e.preventDefault();
-    const ta = e.target, s = ta.selectionStart;
-    ta.value = ta.value.slice(0, s) + '    ' + ta.value.slice(ta.selectionEnd);
-    ta.selectionStart = ta.selectionEnd = s + 4;
-  }
-  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') runInteractive();
-});
 
 // ════════════════════════════════════════════
 //  Resize handles
@@ -599,12 +656,50 @@ function esc(s) {
 }
 
 // ════════════════════════════════════════════
+//  File open / export
+// ════════════════════════════════════════════
+const EXT_MAP = { python3: 'py', cpp: 'cpp', java: 'java' };
+const LANG_FROM_EXT = { py: 'python3', cpp: 'cpp', java: 'java' };
+
+function openFile() {
+  document.getElementById('fileInput').value = '';
+  document.getElementById('fileInput').click();
+}
+
+function handleFileOpen(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+  const reader = new FileReader();
+  reader.onload = e => {
+    editor.setValue(e.target.result);
+    const lang = LANG_FROM_EXT[ext];
+    if (lang) { _origGetById('langSelect').value = lang; setEditorLang(lang); }
+    const base = file.name.replace(/\.[^.]+$/, '');
+    _origGetById('snippetNameInput').value = base;
+  };
+  reader.readAsText(file, 'utf-8');
+}
+
+function exportFile() {
+  const code = document.getElementById('code').value;
+  const lang = document.getElementById('langSelect').value;
+  const nameInput = document.getElementById('snippetNameInput').value.trim();
+  const filename = (nameInput || 'solution') + '.' + (EXT_MAP[lang] || 'txt');
+  const blob = new Blob([code], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ════════════════════════════════════════════
 //  Boot
 // ════════════════════════════════════════════
 loadSnippets();
 renderSnippetList();
 if (snippets.length) loadSnippet(snippets[0].id);
-else document.getElementById('code').value = DEFAULT_CODE.python3;
+else { setEditorLang('python3'); editor.setValue(DEFAULT_CODE.python3); }
 </script>
 </body>
 </html>
