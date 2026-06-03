@@ -4,209 +4,152 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Code Execution Engine</title>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #e2e8f0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #e2e8f0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; user-select: none; }
 
     /* ── Header ── */
     header {
       background: #1e293b; border-bottom: 1px solid #334155;
       padding: 0 20px; display: flex; align-items: center; gap: 12px; height: 48px; flex-shrink: 0;
     }
-    header .logo { font-size: 1.2rem; }
     header h1 { font-size: 0.95rem; font-weight: 700; color: #93c5fd; }
-    header .sep { color: #334155; margin: 0 4px; }
+    header .sep { color: #334155; }
     header .sub { font-size: 0.78rem; color: #475569; }
+    .conn-dot { width: 8px; height: 8px; border-radius: 50%; background: #ef4444; margin-left: auto; flex-shrink: 0; transition: background .3s; }
+    .conn-dot.ok { background: #22c55e; }
 
     /* ── Tabs ── */
     .tabs { display: flex; background: #1a2438; border-bottom: 1px solid #334155; flex-shrink: 0; }
-    .tab-btn {
-      padding: 10px 18px; font-size: 0.82rem; font-weight: 600; cursor: pointer;
-      border: none; background: transparent; color: #64748b;
-      border-bottom: 2px solid transparent; transition: all 0.15s;
-    }
+    .tab-btn { padding: 10px 18px; font-size: 0.82rem; font-weight: 600; cursor: pointer; border: none; background: transparent; color: #64748b; border-bottom: 2px solid transparent; transition: all .15s; }
     .tab-btn:hover { color: #94a3b8; }
     .tab-btn.active { color: #60a5fa; border-bottom-color: #3b82f6; }
     .tab-content { display: none; flex: 1; overflow: hidden; }
     .tab-content.active { display: flex; }
 
-    /* ══════════════ RUNNER TAB ══════════════ */
+    /* ══════════ RUNNER TAB ══════════ */
     #tabRunner { flex-direction: row; }
 
     /* ── Snippet sidebar ── */
-    .snippet-sidebar {
-      width: 240px; background: #1e293b; border-right: 1px solid #334155;
-      display: flex; flex-direction: column; flex-shrink: 0;
-    }
-    .sb-head {
-      padding: 10px 14px; font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
-      letter-spacing: 0.08em; color: #475569; border-bottom: 1px solid #334155;
-      display: flex; align-items: center; justify-content: space-between;
-    }
-    .sb-add {
-      background: #1d4ed8; color: #fff; border: none; border-radius: 5px;
-      font-size: 0.72rem; font-weight: 700; padding: 3px 9px; cursor: pointer;
-    }
+    .snippet-sidebar { width: 220px; min-width: 120px; max-width: 400px; background: #1e293b; border-right: 1px solid #334155; display: flex; flex-direction: column; flex-shrink: 0; }
+    .sb-head { padding: 10px 12px; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: #475569; border-bottom: 1px solid #334155; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+    .sb-add { background: #1d4ed8; color: #fff; border: none; border-radius: 5px; font-size: 0.72rem; font-weight: 700; padding: 3px 9px; cursor: pointer; }
     .sb-add:hover { background: #2563eb; }
     .snippet-list { flex: 1; overflow-y: auto; }
-    .snippet-item {
-      padding: 10px 14px; cursor: pointer; border-bottom: 1px solid #0f172a;
-      transition: background 0.1s; position: relative;
-    }
+    .snippet-item { padding: 9px 12px; cursor: pointer; border-bottom: 1px solid #0f172a; transition: background .1s; position: relative; }
     .snippet-item:hover { background: #263349; }
     .snippet-item.active { background: #1d3461; border-left: 3px solid #3b82f6; }
-    .snippet-item .sn-name { font-size: 0.83rem; font-weight: 600; color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 40px; }
-    .snippet-item .sn-lang { font-size: 0.68rem; color: #64748b; margin-top: 2px; }
-    .snippet-actions { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); display: none; gap: 4px; }
+    .sn-name { font-size: 0.82rem; font-weight: 600; color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 38px; }
+    .sn-lang { font-size: 0.67rem; color: #64748b; margin-top: 2px; }
+    .snippet-actions { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); display: none; gap: 3px; }
     .snippet-item:hover .snippet-actions { display: flex; }
-    .sn-btn { background: #334155; border: none; color: #94a3b8; border-radius: 4px; width: 22px; height: 22px; cursor: pointer; font-size: 0.72rem; display: flex; align-items: center; justify-content: center; }
-    .sn-btn:hover { background: #475569; color: #e2e8f0; }
+    .sn-btn { background: #334155; border: none; color: #94a3b8; border-radius: 4px; width: 20px; height: 20px; cursor: pointer; font-size: 0.7rem; display: flex; align-items: center; justify-content: center; }
+    .sn-btn:hover { background: #475569; }
     .sn-btn.del:hover { background: #7f1d1d; color: #fca5a5; }
-    .sb-empty { padding: 20px 14px; font-size: 0.78rem; color: #475569; line-height: 1.6; }
+    .sb-empty { padding: 16px 12px; font-size: 0.76rem; color: #475569; line-height: 1.6; }
+
+    /* ── Resize handle (vertical) ── */
+    .vresize { width: 4px; background: #1e293b; cursor: col-resize; flex-shrink: 0; transition: background .15s; }
+    .vresize:hover, .vresize.dragging { background: #3b82f6; }
+    .hresize { height: 4px; background: #1e293b; cursor: row-resize; flex-shrink: 0; transition: background .15s; }
+    .hresize:hover, .hresize.dragging { background: #3b82f6; }
 
     /* ── Editor area ── */
-    .editor-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .editor-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 200px; }
+    .toolbar { display: flex; align-items: center; gap: 8px; padding: 7px 12px; background: #1e293b; border-bottom: 1px solid #334155; flex-shrink: 0; }
+    .toolbar label { font-size: 0.76rem; color: #64748b; }
+    select { background: #0f172a; color: #e2e8f0; border: 1px solid #475569; border-radius: 6px; padding: 4px 9px; font-size: 0.81rem; cursor: pointer; }
+    .snippet-name-input { flex: 1; max-width: 200px; background: #0f172a; color: #e2e8f0; border: 1px solid #475569; border-radius: 6px; padding: 4px 9px; font-size: 0.81rem; }
+    .snippet-name-input::placeholder { color: #334155; }
 
-    .toolbar {
-      display: flex; align-items: center; gap: 8px;
-      padding: 8px 14px; background: #1e293b; border-bottom: 1px solid #334155; flex-shrink: 0;
-    }
-    .toolbar label { font-size: 0.77rem; color: #64748b; }
-    select {
-      background: #0f172a; color: #e2e8f0; border: 1px solid #475569;
-      border-radius: 6px; padding: 5px 10px; font-size: 0.82rem; cursor: pointer;
-    }
-    .snippet-name-input {
-      flex: 1; max-width: 220px; background: #0f172a; color: #e2e8f0;
-      border: 1px solid #475569; border-radius: 6px; padding: 5px 10px; font-size: 0.82rem;
-    }
-    .snippet-name-input::placeholder { color: #475569; }
-
-    .btn {
-      padding: 6px 16px; border: none; border-radius: 6px; font-size: 0.83rem;
-      font-weight: 600; cursor: pointer; transition: background 0.15s;
-      display: flex; align-items: center; gap: 6px;
-    }
-    .btn-run { background: #16a34a; color: #fff; margin-left: auto; }
+    .btn { padding: 5px 14px; border: none; border-radius: 6px; font-size: 0.81rem; font-weight: 600; cursor: pointer; transition: background .15s; display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+    .btn-run  { background: #16a34a; color: #fff; margin-left: auto; }
     .btn-run:hover:not(:disabled) { background: #15803d; }
-    .btn-run:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-run:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-kill { background: #7f1d1d; color: #fca5a5; margin-left: auto; display: none; }
+    .btn-kill:hover { background: #991b1b; }
     .btn-save { background: #334155; color: #cbd5e1; }
     .btn-save:hover { background: #475569; }
     .btn-secondary { background: #334155; color: #cbd5e1; }
     .btn-secondary:hover { background: #475569; }
-    .btn-danger { background: #7f1d1d; color: #fca5a5; }
-    .btn-danger:hover { background: #991b1b; }
 
-    .spinner { width: 12px; height: 12px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; display: none; }
+    .spinner { width: 11px; height: 11px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; display: none; }
     .btn.loading .spinner { display: block; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* ── Split pane: editor + stdin ── */
-    .code-pane { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-    .editor-wrap { flex: 1; position: relative; overflow: hidden; }
     textarea.code {
-      width: 100%; height: 100%; background: #0d1117; color: #c9d1d9;
+      flex: 1; width: 100%; background: #0d1117; color: #c9d1d9;
       border: none; font-family: 'Consolas', 'Fira Code', monospace;
       font-size: 0.87rem; line-height: 1.65; padding: 14px 18px;
-      resize: none; outline: none; tab-size: 4;
+      resize: none; outline: none; tab-size: 4; user-select: text;
     }
 
-    .stdin-bar {
-      display: flex; align-items: center; gap: 8px;
-      padding: 6px 14px; background: #1a2438; border-top: 1px solid #334155;
-      font-size: 0.72rem; color: #475569; flex-shrink: 0;
-    }
-    textarea.stdin {
-      flex: 1; background: #0f172a; color: #cbd5e1; border: 1px solid #334155;
-      border-radius: 5px; font-family: 'Consolas', monospace; font-size: 0.78rem;
-      padding: 5px 8px; resize: none; outline: none; height: 52px; line-height: 1.4;
-    }
-    textarea.stdin:focus { border-color: #475569; }
-    textarea.stdin::placeholder { color: #334155; }
+    /* ── Terminal panel ── */
+    .terminal-panel { height: 240px; min-height: 80px; max-height: 80vh; background: #080d14; display: flex; flex-direction: column; flex-shrink: 0; }
+    .term-header { padding: 5px 12px; font-size: 0.67rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: #475569; border-bottom: 1px solid #1e293b; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    .term-chip { font-size: 0.73rem; font-weight: 700; padding: 1px 8px; border-radius: 7px; }
+    .term-chip.OK                  { background: #14532d; color: #86efac; }
+    .term-chip.COMPILATION_ERROR   { background: #78350f; color: #fcd34d; }
+    .term-chip.RUNTIME_ERROR       { background: #7f1d1d; color: #fca5a5; }
+    .term-chip.TIME_LIMIT_EXCEEDED { background: #4c1d95; color: #c4b5fd; }
+    .term-chip.KILLED              { background: #374151; color: #9ca3af; }
+    .term-chip.ERROR               { background: #374151; color: #9ca3af; }
+    .term-time { font-size: .7rem; color: #334155; margin-left: auto; }
 
-    /* ── Output panel ── */
-    .output-panel {
-      height: 200px; background: #080d14; border-top: 1px solid #334155;
-      display: flex; flex-direction: column; flex-shrink: 0;
-    }
-    .output-header {
-      padding: 6px 14px; font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
-      letter-spacing: 0.08em; color: #475569; border-bottom: 1px solid #1e293b;
-      display: flex; align-items: center; gap: 10px; flex-shrink: 0;
-    }
-    .status-chip { font-size: 0.75rem; font-weight: 700; padding: 2px 9px; border-radius: 8px; }
-    .status-chip.OK                   { background: #14532d; color: #86efac; }
-    .status-chip.COMPILATION_ERROR    { background: #78350f; color: #fcd34d; }
-    .status-chip.RUNTIME_ERROR        { background: #7f1d1d; color: #fca5a5; }
-    .status-chip.TIME_LIMIT_EXCEEDED  { background: #4c1d95; color: #c4b5fd; }
-    .status-chip.ERROR                { background: #374151; color: #9ca3af; }
-    .time-label { font-size: 0.72rem; color: #475569; margin-left: auto; }
-    .output-body {
-      flex: 1; overflow-y: auto; padding: 10px 14px;
-      font-family: 'Consolas', monospace; font-size: 0.82rem; line-height: 1.55;
-    }
-    .out-stdout { color: #c9d1d9; white-space: pre-wrap; word-break: break-all; }
-    .out-stderr { color: #fca5a5; white-space: pre-wrap; word-break: break-all; margin-top: 6px; font-size: 0.78rem; }
-    .out-error  { color: #fcd34d; white-space: pre-wrap; word-break: break-all; }
-    .out-placeholder { color: #334155; font-size: 0.82rem; }
+    .term-body { flex: 1; overflow-y: auto; padding: 8px 12px; font-family: 'Consolas', monospace; font-size: 0.84rem; line-height: 1.5; user-select: text; }
+    .term-body .t-stdout { color: #c9d1d9; white-space: pre-wrap; word-break: break-all; }
+    .term-body .t-stderr { color: #fca5a5; white-space: pre-wrap; word-break: break-all; }
+    .term-body .t-echo   { color: #60a5fa; white-space: pre-wrap; }
+    .term-body .t-error  { color: #fcd34d; white-space: pre-wrap; }
+    .term-body .t-info   { color: #475569; font-style: italic; }
+    .term-placeholder { color: #334155; font-size: .82rem; padding: 4px 0; }
 
-    /* ══════════════ HISTORY TAB ══════════════ */
-    .page { padding: 22px; overflow-y: auto; flex: 1; }
+    .term-input-bar { display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: #0f172a; border-top: 1px solid #1e293b; flex-shrink: 0; }
+    .term-prompt { color: #475569; font-family: monospace; font-size: .82rem; flex-shrink: 0; }
+    .term-input { flex: 1; background: transparent; border: none; color: #c9d1d9; font-family: 'Consolas', monospace; font-size: .84rem; outline: none; padding: 0; }
+    .term-input:disabled { color: #334155; }
+    .term-send { background: #1d4ed8; color: #fff; border: none; border-radius: 4px; padding: 3px 10px; font-size: .76rem; cursor: pointer; flex-shrink: 0; }
+    .term-send:hover:not(:disabled) { background: #2563eb; }
+    .term-send:disabled { opacity: .4; cursor: not-allowed; }
+
+    /* ══════════ HISTORY TAB ══════════ */
+    .page { padding: 20px; overflow-y: auto; flex: 1; user-select: text; }
     .page h2 { font-size: 1rem; font-weight: 700; color: #93c5fd; margin-bottom: 14px; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
-    th { text-align: left; padding: 8px 12px; background: #1e293b; color: #64748b; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid #334155; }
-    td { padding: 8px 12px; border-bottom: 1px solid #1a2638; color: #cbd5e1; }
+    table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+    th { text-align: left; padding: 7px 11px; background: #1e293b; color: #64748b; font-size: .67rem; text-transform: uppercase; letter-spacing: .06em; border-bottom: 1px solid #334155; }
+    td { padding: 7px 11px; border-bottom: 1px solid #1a2638; color: #cbd5e1; }
     tr:hover td { background: #1a2638; }
-    .chip { display: inline-block; padding: 2px 8px; border-radius: 7px; font-size: 0.7rem; font-weight: 700; }
-    .chip.OK                   { background: #14532d; color: #86efac; }
-    .chip.ACCEPTED             { background: #14532d; color: #86efac; }
-    .chip.WRONG_ANSWER         { background: #7f1d1d; color: #fca5a5; }
-    .chip.COMPILATION_ERROR    { background: #78350f; color: #fcd34d; }
-    .chip.TIME_LIMIT_EXCEEDED  { background: #4c1d95; color: #c4b5fd; }
-    .chip.RUNTIME_ERROR        { background: #7f1d1d; color: #fca5a5; }
-    .chip.ERROR                { background: #374151; color: #9ca3af; }
+    .chip { display: inline-block; padding: 2px 8px; border-radius: 7px; font-size: .7rem; font-weight: 700; }
+    .chip.OK                  { background: #14532d; color: #86efac; }
+    .chip.COMPILATION_ERROR   { background: #78350f; color: #fcd34d; }
+    .chip.RUNTIME_ERROR       { background: #7f1d1d; color: #fca5a5; }
+    .chip.TIME_LIMIT_EXCEEDED { background: #4c1d95; color: #c4b5fd; }
+    .chip.KILLED              { background: #374151; color: #9ca3af; }
+    .chip.ERROR               { background: #374151; color: #9ca3af; }
     .chip.python3 { background: #1a3a6b; color: #93c5fd; }
     .chip.cpp     { background: #2d1b4e; color: #c4b5fd; }
     .chip.java    { background: #3b2000; color: #fbbf24; }
 
-    /* ══════════════ MODAL ══════════════ */
-    .modal-overlay {
-      position: fixed; inset: 0; background: rgba(0,0,0,0.6);
-      display: flex; align-items: center; justify-content: center; z-index: 100;
-    }
+    /* ══════════ MODAL ══════════ */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; z-index: 100; }
     .modal-overlay.hidden { display: none; }
-    .modal {
-      background: #1e293b; border: 1px solid #334155; border-radius: 10px;
-      padding: 22px; width: 360px;
-    }
-    .modal h3 { font-size: 0.95rem; font-weight: 700; color: #e2e8f0; margin-bottom: 14px; }
-    .modal label { display: block; font-size: 0.77rem; color: #94a3b8; margin-bottom: 5px; margin-top: 12px; }
+    .modal { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 22px; width: 340px; }
+    .modal h3 { font-size: .93rem; font-weight: 700; color: #e2e8f0; margin-bottom: 14px; }
+    .modal label { display: block; font-size: .76rem; color: #94a3b8; margin: 10px 0 4px; }
     .modal label:first-of-type { margin-top: 0; }
-    .modal input, .modal select {
-      width: 100%; background: #0f172a; color: #e2e8f0; border: 1px solid #475569;
-      border-radius: 6px; padding: 7px 10px; font-size: 0.85rem;
-    }
+    .modal input, .modal select { width: 100%; background: #0f172a; color: #e2e8f0; border: 1px solid #475569; border-radius: 6px; padding: 7px 10px; font-size: .84rem; }
     .modal-btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
-
-    /* ── API bar ── */
-    .api-bar {
-      position: fixed; bottom: 0; right: 0; padding: 5px 12px;
-      background: #1e293b; border-top: 1px solid #334155; border-left: 1px solid #334155;
-      display: flex; align-items: center; gap: 7px; font-size: 0.7rem; color: #64748b;
-      border-radius: 7px 0 0 0; z-index: 10;
-    }
-    .api-bar input { background: #0f172a; color: #e2e8f0; border: 1px solid #475569; border-radius: 4px; padding: 2px 7px; font-size: 0.7rem; width: 200px; }
-    .api-dot { width: 7px; height: 7px; border-radius: 50%; background: #ef4444; flex-shrink: 0; }
-    .api-dot.ok { background: #22c55e; }
   </style>
 </head>
 <body>
 
 <header>
-  <span class="logo">⚡</span>
+  <span style="font-size:1.1rem">⚡</span>
   <h1>Code Execution Engine</h1>
   <span class="sep">·</span>
-  <span class="sub">Serverless · Python · C++ · Java</span>
+  <span class="sub">Python · C++17 · Java</span>
+  <div class="conn-dot" id="connDot" title="Server connection"></div>
 </header>
 
 <div class="tabs">
@@ -214,22 +157,22 @@
   <button class="tab-btn" onclick="switchTab('History',this)">History</button>
 </div>
 
-<!-- ══════════════ RUNNER TAB ══════════════ -->
+<!-- ══════════ RUNNER TAB ══════════ -->
 <div id="tabRunner" class="tab-content active">
 
-  <!-- Snippet sidebar -->
-  <aside class="snippet-sidebar">
+  <aside class="snippet-sidebar" id="snippetSidebar">
     <div class="sb-head">
       Snippets
       <button class="sb-add" onclick="openNewSnippet()">+ New</button>
     </div>
     <div class="snippet-list" id="snippetList">
-      <div class="sb-empty">No snippets saved yet.<br>Click <strong>+ New</strong> to create one.</div>
+      <div class="sb-empty">No snippets yet.<br>Click <strong>+ New</strong>.</div>
     </div>
   </aside>
 
-  <!-- Editor -->
-  <div class="editor-area">
+  <div class="vresize" id="vresize1"></div>
+
+  <div class="editor-area" id="editorArea">
     <div class="toolbar">
       <label>Language</label>
       <select id="langSelect" onchange="onLangChange()">
@@ -239,48 +182,43 @@
       </select>
       <input class="snippet-name-input" id="snippetNameInput" placeholder="Snippet name…" />
       <button class="btn btn-save" onclick="saveCurrentSnippet()">Save</button>
-      <button class="btn btn-run" id="runBtn" onclick="runCode()">
+      <button class="btn btn-run"  id="runBtn"  onclick="runInteractive()">
         <div class="spinner" id="spinner"></div>
         <span id="btnText">▶ Run</span>
       </button>
+      <button class="btn btn-kill" id="killBtn" onclick="killProc()">■ Stop</button>
     </div>
 
-    <div class="code-pane">
-      <div class="editor-wrap">
-        <textarea class="code" id="code" spellcheck="false"
-          placeholder="Write your code here…&#10;&#10;Ctrl+Enter to run"></textarea>
-      </div>
+    <textarea class="code" id="code" spellcheck="false"
+      placeholder="Write your code here…&#10;Ctrl+Enter to run"></textarea>
 
-      <div class="stdin-bar">
-        <span>stdin</span>
-        <textarea class="stdin" id="stdin" placeholder="Optional input for your program…"></textarea>
-      </div>
-    </div>
+    <div class="hresize" id="hresize1"></div>
 
-    <div class="output-panel">
-      <div class="output-header">
-        Output
-        <span class="status-chip" id="statusChip" style="display:none"></span>
-        <span class="time-label" id="timeLabel"></span>
+    <div class="terminal-panel" id="terminalPanel">
+      <div class="term-header">
+        Terminal
+        <span class="term-chip" id="termChip" style="display:none"></span>
+        <span class="term-time" id="termTime"></span>
       </div>
-      <div class="output-body" id="outputBody">
-        <span class="out-placeholder">Press ▶ Run to execute your code.</span>
+      <div class="term-body" id="termBody">
+        <span class="term-placeholder">Press ▶ Run — output appears here in real-time.</span>
+      </div>
+      <div class="term-input-bar">
+        <span class="term-prompt">›</span>
+        <input class="term-input" id="termInput" placeholder="Type input and press Enter…" disabled />
+        <button class="term-send" id="termSend" onclick="sendStdin()" disabled>Send</button>
       </div>
     </div>
   </div>
 </div>
 
-<!-- ══════════════ HISTORY TAB ══════════════ -->
+<!-- ══════════ HISTORY TAB ══════════ -->
 <div id="tabHistory" class="tab-content">
   <div class="page">
     <h2>Execution History</h2>
-    <div style="margin-bottom:14px">
-      <button class="btn btn-secondary" onclick="loadHistory()">Refresh</button>
-    </div>
+    <button class="btn btn-secondary" onclick="loadHistory()" style="margin-bottom:14px">Refresh</button>
     <table>
-      <thead>
-        <tr><th>#</th><th>Time</th><th>Language</th><th>Status</th><th>Code preview</th></tr>
-      </thead>
+      <thead><tr><th>#</th><th>Time</th><th>Language</th><th>Status</th><th>Preview</th></tr></thead>
       <tbody id="historyBody">
         <tr><td colspan="5" style="text-align:center;color:#475569;padding:20px">Loading…</td></tr>
       </tbody>
@@ -288,7 +226,7 @@
   </div>
 </div>
 
-<!-- ══════════════ MODAL — New/Edit Snippet ══════════════ -->
+<!-- ══════════ MODAL ══════════ -->
 <div class="modal-overlay hidden" id="modalOverlay">
   <div class="modal">
     <h3 id="modalTitle">New Snippet</h3>
@@ -307,22 +245,101 @@
   </div>
 </div>
 
-<!-- API bar -->
-<div class="api-bar">
-  <div class="api-dot" id="apiDot"></div>
-  API:
-  <input type="text" id="apiUrl" value="http://localhost:5000" onchange="checkApi()" />
-</div>
-
 <script>
-// ══════════════════════════════════════════════════════
-//  State
-// ══════════════════════════════════════════════════════
-const STORAGE_KEY = 'cee_snippets_v2';
-let snippets = [];       // [{id, name, lang, code, stdin}]
-let activeSnippetId = null;
-let modalMode = null;    // 'new' | 'edit'
-let editingId = null;
+// ════════════════════════════════════════════
+//  Socket.IO
+// ════════════════════════════════════════════
+const SERVER = 'http://localhost:5000';
+const socket = io(SERVER, { transports: ['websocket', 'polling'] });
+let running = false;
+
+socket.on('connect', () => {
+  document.getElementById('connDot').classList.add('ok');
+});
+socket.on('disconnect', () => {
+  document.getElementById('connDot').classList.remove('ok');
+  if (running) setRunning(false);
+});
+
+socket.on('terminal_output', ({ type, text }) => {
+  appendTerm(type, text);
+});
+
+socket.on('terminal_done', ({ status, time_ms }) => {
+  setRunning(false);
+  const chip = document.getElementById('termChip');
+  chip.style.display = '';
+  chip.textContent = status;
+  chip.className = 'term-chip ' + status;
+  if (time_ms) document.getElementById('termTime').textContent = time_ms + ' ms';
+  appendTerm('info', `\n[Exited: ${status}${time_ms ? ' · ' + time_ms + ' ms' : ''}]\n`);
+});
+
+// ════════════════════════════════════════════
+//  Terminal helpers
+// ════════════════════════════════════════════
+function appendTerm(type, text) {
+  const body = document.getElementById('termBody');
+  // Remove placeholder on first output
+  const ph = body.querySelector('.term-placeholder');
+  if (ph) ph.remove();
+
+  const span = document.createElement('span');
+  span.className = 't-' + type;
+  span.textContent = text;
+  body.appendChild(span);
+  body.scrollTop = body.scrollHeight;
+}
+
+function clearTerm() {
+  document.getElementById('termBody').innerHTML =
+    '<span class="term-placeholder">Press ▶ Run — output appears here in real-time.</span>';
+  document.getElementById('termChip').style.display = 'none';
+  document.getElementById('termTime').textContent = '';
+}
+
+function setRunning(on) {
+  running = on;
+  document.getElementById('runBtn').style.display  = on ? 'none' : '';
+  document.getElementById('killBtn').style.display = on ? '' : 'none';
+  document.getElementById('termInput').disabled  = !on;
+  document.getElementById('termSend').disabled   = !on;
+  if (on) {
+    document.getElementById('termInput').focus();
+  }
+}
+
+function runInteractive() {
+  clearTerm();
+  setRunning(true);
+  document.getElementById('termChip').style.display = 'none';
+  socket.emit('run_interactive', {
+    language:    document.getElementById('langSelect').value,
+    source_code: document.getElementById('code').value,
+  });
+}
+
+function killProc() {
+  socket.emit('terminal_kill');
+}
+
+function sendStdin() {
+  const inp = document.getElementById('termInput');
+  const text = inp.value;
+  inp.value = '';
+  socket.emit('terminal_stdin', { text });
+}
+
+document.getElementById('termInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') sendStdin();
+});
+
+// ════════════════════════════════════════════
+//  Snippets (localStorage)
+// ════════════════════════════════════════════
+const STORAGE_KEY = 'cee_snippets_v3';
+let snippets = [];
+let activeId  = null;
 
 const DEFAULT_CODE = {
   python3: '# Python 3\nprint("Hello, World!")\n',
@@ -330,51 +347,39 @@ const DEFAULT_CODE = {
   java:    'public class Solution {\n    public static void main(String[] args) {\n        System.out.println("Hello, World!");\n    }\n}\n',
 };
 
-// ══════════════════════════════════════════════════════
-//  Persistence
-// ══════════════════════════════════════════════════════
 function loadSnippets() {
   try { snippets = JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
   catch { snippets = []; }
 }
-function saveSnippets() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(snippets));
-}
+function saveSnippets() { localStorage.setItem(STORAGE_KEY, JSON.stringify(snippets)); }
 function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
+function langLabel(l) { return l === 'python3' ? 'Python 3' : l === 'cpp' ? 'C++17' : 'Java'; }
 
-// ══════════════════════════════════════════════════════
-//  Snippet sidebar
-// ══════════════════════════════════════════════════════
 function renderSnippetList() {
   const el = document.getElementById('snippetList');
   if (!snippets.length) {
-    el.innerHTML = '<div class="sb-empty">No snippets saved yet.<br>Click <strong>+ New</strong> to create one.</div>';
+    el.innerHTML = '<div class="sb-empty">No snippets yet.<br>Click <strong>+ New</strong>.</div>';
     return;
   }
   el.innerHTML = snippets.map(s => `
-    <div class="snippet-item${s.id === activeSnippetId ? ' active' : ''}" onclick="loadSnippet('${s.id}')">
+    <div class="snippet-item${s.id === activeId ? ' active' : ''}" onclick="loadSnippet('${s.id}')">
       <div class="sn-name">${esc(s.name)}</div>
       <div class="sn-lang">${langLabel(s.lang)}</div>
       <div class="snippet-actions">
-        <button class="sn-btn" onclick="editSnippet(event,'${s.id}')" title="Rename">✏</button>
+        <button class="sn-btn"     onclick="editSnippet(event,'${s.id}')" title="Rename">✏</button>
         <button class="sn-btn del" onclick="deleteSnippet(event,'${s.id}')" title="Delete">✕</button>
       </div>
     </div>`).join('');
 }
 
-function langLabel(l) {
-  return l === 'python3' ? 'Python 3' : l === 'cpp' ? 'C++17' : 'Java';
-}
-
 function loadSnippet(id) {
   const s = snippets.find(x => x.id === id);
   if (!s) return;
-  activeSnippetId = id;
+  activeId = id;
   document.getElementById('langSelect').value = s.lang;
-  document.getElementById('code').value = s.code;
-  document.getElementById('stdin').value = s.stdin || '';
+  document.getElementById('code').value = s.code || '';
   document.getElementById('snippetNameInput').value = s.name;
-  clearOutput();
+  clearTerm();
   renderSnippetList();
 }
 
@@ -382,32 +387,33 @@ function saveCurrentSnippet() {
   const name = document.getElementById('snippetNameInput').value.trim();
   const lang  = document.getElementById('langSelect').value;
   const code  = document.getElementById('code').value;
-  const stdin = document.getElementById('stdin').value;
-
   if (!name) { document.getElementById('snippetNameInput').focus(); return; }
-
-  if (activeSnippetId) {
-    const s = snippets.find(x => x.id === activeSnippetId);
-    if (s) { s.name = name; s.lang = lang; s.code = code; s.stdin = stdin; }
+  if (activeId) {
+    const s = snippets.find(x => x.id === activeId);
+    if (s) Object.assign(s, { name, lang, code });
   } else {
-    const s = { id: genId(), name, lang, code, stdin };
+    const s = { id: genId(), name, lang, code };
     snippets.unshift(s);
-    activeSnippetId = s.id;
+    activeId = s.id;
   }
   saveSnippets();
   renderSnippetList();
 }
 
-// ══════════════════════════════════════════════════════
-//  Modal — new snippet
-// ══════════════════════════════════════════════════════
+function onLangChange() {
+  if (!activeId) document.getElementById('code').value = DEFAULT_CODE[document.getElementById('langSelect').value];
+}
+
+// ── Modal ──
+let modalMode = null, editingId = null;
+
 function openNewSnippet() {
   modalMode = 'new';
   document.getElementById('modalTitle').textContent = 'New Snippet';
   document.getElementById('modalName').value = '';
   document.getElementById('modalLang').value = document.getElementById('langSelect').value;
   document.getElementById('modalOverlay').classList.remove('hidden');
-  document.getElementById('modalName').focus();
+  setTimeout(() => document.getElementById('modalName').focus(), 50);
 }
 
 function editSnippet(e, id) {
@@ -419,27 +425,22 @@ function editSnippet(e, id) {
   document.getElementById('modalName').value = s.name;
   document.getElementById('modalLang').value = s.lang;
   document.getElementById('modalOverlay').classList.remove('hidden');
-  document.getElementById('modalName').focus();
+  setTimeout(() => document.getElementById('modalName').focus(), 50);
 }
 
 function confirmModal() {
   const name = document.getElementById('modalName').value.trim();
   const lang  = document.getElementById('modalLang').value;
   if (!name) return;
-
   if (modalMode === 'new') {
-    const s = { id: genId(), name, lang, code: DEFAULT_CODE[lang], stdin: '' };
+    const s = { id: genId(), name, lang, code: DEFAULT_CODE[lang] };
     snippets.unshift(s);
-    saveSnippets();
-    closeModal();
-    loadSnippet(s.id);
-  } else if (modalMode === 'edit') {
+    saveSnippets(); closeModal(); loadSnippet(s.id);
+  } else {
     const s = snippets.find(x => x.id === editingId);
     if (s) { s.name = name; s.lang = lang; }
-    saveSnippets();
-    closeModal();
-    renderSnippetList();
-    if (activeSnippetId === editingId) {
+    saveSnippets(); closeModal(); renderSnippetList();
+    if (activeId === editingId) {
       document.getElementById('langSelect').value = lang;
       document.getElementById('snippetNameInput').value = name;
     }
@@ -452,110 +453,14 @@ function deleteSnippet(e, id) {
   e.stopPropagation();
   snippets = snippets.filter(x => x.id !== id);
   saveSnippets();
-  if (activeSnippetId === id) {
-    activeSnippetId = null;
+  if (activeId === id) {
+    activeId = null;
     document.getElementById('code').value = DEFAULT_CODE[document.getElementById('langSelect').value];
-    document.getElementById('stdin').value = '';
     document.getElementById('snippetNameInput').value = '';
-    clearOutput();
+    clearTerm();
   }
   renderSnippetList();
 }
-
-// ══════════════════════════════════════════════════════
-//  Language change
-// ══════════════════════════════════════════════════════
-function onLangChange() {
-  if (!activeSnippetId) {
-    document.getElementById('code').value = DEFAULT_CODE[document.getElementById('langSelect').value];
-  }
-}
-
-// ══════════════════════════════════════════════════════
-//  Run
-// ══════════════════════════════════════════════════════
-function apiBase() { return document.getElementById('apiUrl').value.replace(/\/$/, ''); }
-
-async function runCode() {
-  const btn = document.getElementById('runBtn');
-  btn.disabled = true;
-  btn.classList.add('loading');
-  document.getElementById('spinner').style.display = 'block';
-  document.getElementById('btnText').textContent = 'Running…';
-
-  const chip = document.getElementById('statusChip');
-  chip.style.display = 'none';
-  document.getElementById('timeLabel').textContent = '';
-  document.getElementById('outputBody').innerHTML = '<span class="out-placeholder">Executing…</span>';
-
-  try {
-    const res = await fetch(apiBase() + '/run', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        language:    document.getElementById('langSelect').value,
-        source_code: document.getElementById('code').value,
-        stdin:       document.getElementById('stdin').value,
-      }),
-    });
-    const data = await res.json();
-    renderOutput(data);
-  } catch (err) {
-    renderOutput({ status: 'ERROR', output: '', stderr: '', error: 'Network error: ' + err.message });
-  } finally {
-    btn.disabled = false;
-    btn.classList.remove('loading');
-    document.getElementById('spinner').style.display = 'none';
-    document.getElementById('btnText').textContent = '▶ Run';
-  }
-}
-
-function renderOutput(data) {
-  const chip = document.getElementById('statusChip');
-  chip.style.display = '';
-  chip.textContent = data.status;
-  chip.className = 'status-chip ' + data.status;
-
-  if (data.time_ms) document.getElementById('timeLabel').textContent = data.time_ms + ' ms';
-
-  let html = '';
-  if (data.status === 'COMPILATION_ERROR') {
-    html = `<div class="out-error">${esc(data.error || data.stderr || 'Compilation failed')}</div>`;
-  } else if (data.status === 'ERROR') {
-    html = `<div class="out-error">${esc(data.error || 'Unknown error')}</div>`;
-  } else if (data.status === 'TIME_LIMIT_EXCEEDED') {
-    html = `<div class="out-error">Time limit exceeded (5 s)</div>`;
-  } else {
-    if (data.output)
-      html += `<div class="out-stdout">${esc(data.output)}</div>`;
-    else
-      html += `<div class="out-placeholder">(no output)</div>`;
-    if (data.stderr)
-      html += `<div class="out-stderr">stderr: ${esc(data.stderr)}</div>`;
-    if (data.status === 'RUNTIME_ERROR' && !html.includes('stderr'))
-      html += `<div class="out-error">Runtime error (non-zero exit)</div>`;
-  }
-  document.getElementById('outputBody').innerHTML = html;
-}
-
-function clearOutput() {
-  document.getElementById('statusChip').style.display = 'none';
-  document.getElementById('timeLabel').textContent = '';
-  document.getElementById('outputBody').innerHTML = '<span class="out-placeholder">Press ▶ Run to execute your code.</span>';
-}
-
-// ══════════════════════════════════════════════════════
-//  Keyboard shortcut
-// ══════════════════════════════════════════════════════
-document.getElementById('code').addEventListener('keydown', e => {
-  if (e.key === 'Tab') {
-    e.preventDefault();
-    const ta = e.target, s = ta.selectionStart;
-    ta.value = ta.value.slice(0, s) + '    ' + ta.value.slice(ta.selectionEnd);
-    ta.selectionStart = ta.selectionEnd = s + 4;
-  }
-  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') runCode();
-});
 
 document.getElementById('modalName').addEventListener('keydown', e => {
   if (e.key === 'Enter') confirmModal();
@@ -565,28 +470,107 @@ document.getElementById('modalOverlay').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeModal();
 });
 
-// ══════════════════════════════════════════════════════
+// ── Keyboard shortcut ──
+document.getElementById('code').addEventListener('keydown', e => {
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const ta = e.target, s = ta.selectionStart;
+    ta.value = ta.value.slice(0, s) + '    ' + ta.value.slice(ta.selectionEnd);
+    ta.selectionStart = ta.selectionEnd = s + 4;
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') runInteractive();
+});
+
+// ════════════════════════════════════════════
+//  Resize handles
+// ════════════════════════════════════════════
+function makeVResize(handleId, leftElId, rightElId) {
+  const handle = document.getElementById(handleId);
+  const left   = document.getElementById(leftElId);
+  let startX, startW;
+
+  handle.addEventListener('mousedown', e => {
+    startX = e.clientX;
+    startW = left.offsetWidth;
+    handle.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.pointerEvents = 'none';
+
+    const onMove = ev => {
+      const delta = ev.clientX - startX;
+      const newW  = Math.max(120, Math.min(500, startW + delta));
+      left.style.width = newW + 'px';
+    };
+    const onUp = () => {
+      handle.classList.remove('dragging');
+      document.body.style.cursor = '';
+      document.body.style.pointerEvents = '';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
+function makeHResize(handleId, topElId, bottomElId) {
+  const handle = document.getElementById(handleId);
+  const bottom = document.getElementById(bottomElId);
+  let startY, startH;
+
+  handle.addEventListener('mousedown', e => {
+    startY = e.clientY;
+    startH = bottom.offsetHeight;
+    handle.classList.add('dragging');
+    document.body.style.cursor = 'row-resize';
+    document.body.style.pointerEvents = 'none';
+
+    const onMove = ev => {
+      const delta = startY - ev.clientY;   // dragging up = bigger terminal
+      const newH  = Math.max(80, Math.min(window.innerHeight * 0.75, startH + delta));
+      bottom.style.height = newH + 'px';
+    };
+    const onUp = () => {
+      handle.classList.remove('dragging');
+      document.body.style.cursor = '';
+      document.body.style.pointerEvents = '';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
+makeVResize('vresize1', 'snippetSidebar', 'editorArea');
+makeHResize('hresize1', 'code', 'terminalPanel');
+
+// ════════════════════════════════════════════
 //  History tab
-// ══════════════════════════════════════════════════════
+// ════════════════════════════════════════════
 async function loadHistory() {
   try {
-    const res = await fetch(apiBase() + '/history?limit=100');
+    const res  = await fetch(SERVER + '/history?limit=100');
     const data = await res.json();
-    const subs = (data.submissions || []).filter(s => s.problem_id !== '__free_run__' || true);
+    const subs = data.submissions || [];
     if (!subs.length) {
-      document.getElementById('historyBody').innerHTML = '<tr><td colspan="5" style="text-align:center;color:#475569;padding:20px">No executions yet.</td></tr>';
+      document.getElementById('historyBody').innerHTML =
+        '<tr><td colspan="5" style="text-align:center;color:#475569;padding:20px">No executions yet.</td></tr>';
       return;
     }
     document.getElementById('historyBody').innerHTML = subs.map((s, i) => `
       <tr>
         <td style="color:#475569">${i+1}</td>
-        <td style="color:#64748b;font-size:0.72rem">${fmtTime(s.timestamp)}</td>
+        <td style="color:#64748b;font-size:.72rem">${fmtTime(s.timestamp)}</td>
         <td><span class="chip ${s.language}">${langLabel(s.language)}</span></td>
         <td><span class="chip ${s.status}">${s.status.replace(/_/g,' ')}</span></td>
-        <td style="font-family:monospace;font-size:0.72rem;color:#64748b">${esc((s.source_code||'').slice(0,60).replace(/\n/g,'↵'))}</td>
+        <td style="font-family:monospace;font-size:.71rem;color:#64748b">
+          ${esc((s.source_code||'').slice(0,60).replace(/\n/g,'↵'))}
+        </td>
       </tr>`).join('');
   } catch(e) {
-    document.getElementById('historyBody').innerHTML = `<tr><td colspan="5" style="color:#fca5a5;padding:12px">Error: ${esc(e.message)}</td></tr>`;
+    document.getElementById('historyBody').innerHTML =
+      `<tr><td colspan="5" style="color:#fca5a5;padding:12px">Error: ${esc(e.message)}</td></tr>`;
   }
 }
 
@@ -596,9 +580,9 @@ function fmtTime(iso) {
   catch { return iso; }
 }
 
-// ══════════════════════════════════════════════════════
+// ════════════════════════════════════════════
 //  Tab switching
-// ══════════════════════════════════════════════════════
+// ════════════════════════════════════════════
 function switchTab(name, btn) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
@@ -607,32 +591,18 @@ function switchTab(name, btn) {
   if (name === 'History') loadHistory();
 }
 
-// ══════════════════════════════════════════════════════
-//  API check
-// ══════════════════════════════════════════════════════
-async function checkApi() {
-  try {
-    const res = await fetch(apiBase() + '/problems');
-    document.getElementById('apiDot').classList.toggle('ok', res.ok);
-  } catch {
-    document.getElementById('apiDot').classList.remove('ok');
-  }
-}
-
-// ══════════════════════════════════════════════════════
+// ════════════════════════════════════════════
 //  Utils
-// ══════════════════════════════════════════════════════
+// ════════════════════════════════════════════
 function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-// ══════════════════════════════════════════════════════
+// ════════════════════════════════════════════
 //  Boot
-// ══════════════════════════════════════════════════════
+// ════════════════════════════════════════════
 loadSnippets();
 renderSnippetList();
-checkApi();
-// Load first snippet if any
 if (snippets.length) loadSnippet(snippets[0].id);
 else document.getElementById('code').value = DEFAULT_CODE.python3;
 </script>
