@@ -1,3 +1,4 @@
+# Authors: Phan Nguyen Huu Phuoc (2212720), Pham Vo Quang Minh (2111762)
 """
 Local demo server — simulates the full AWS pipeline without cloud costs.
 

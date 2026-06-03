@@ -1,8 +1,10 @@
 # Serverless Code Execution Engine
 
-A cloud-native online judge platform that compiles and evaluates user-submitted code against hidden test cases — built entirely on AWS serverless infrastructure.
+A cloud-native platform for executing code in isolated sandboxes — built on AWS serverless infrastructure. Supports **Python 3**, **C++17**, and **Java** with strict security controls: network-isolated execution environment, encrypted test cases, per-invocation cleanup, and rate limiting.
 
-Supports **Python 3**, **C++**, and **Java** with strict sandboxing: no internet access from the execution environment, encrypted test cases, per-invocation cleanup, and rate limiting.
+**Authors:**
+- Phan Nguyễn Hữu Phước — 2212720
+- Phạm Võ Quang Minh — 2111762
 
 ---
 
@@ -101,8 +103,6 @@ Open `frontend/index.html` in a browser. Default API URL: `http://localhost:5000
 On first run the server generates a Fernet key, encrypts the sample problems, and starts serving immediately.
 
 ### Deploy to AWS
-
-See **[AWS_SETUP.md](AWS_SETUP.md)** for full instructions.
 
 ```bash
 pip install aws-sam-cli
